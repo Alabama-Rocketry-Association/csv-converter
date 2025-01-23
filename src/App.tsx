@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
+//Eventually enable this for image export
 import ChartJsImage from 'chartjs-to-image';
 
 ChartJS.register(
@@ -264,13 +265,13 @@ function App() {
 
       {/* Top section for inputs */}
       <div className="flex flex-col space-y-4 mb-6">
-        <input
+        {/* <input
           type="text"
           placeholder="Enter a title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg"
-        />
+        /> */}
         <input
           type="text"
           placeholder="Reduce Dataset Size (Sample every nth point)"
