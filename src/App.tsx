@@ -13,7 +13,7 @@ import {
 import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
 //Eventually enable this for image export
-import ChartJsImage from 'chartjs-to-image';
+// import ChartJsImage from 'chartjs-to-image';
 
 ChartJS.register(
   CategoryScale,
@@ -32,7 +32,7 @@ interface DataPoint {
 
 function App() {
   const [data, setData] = useState<DataPoint[] | null>(null);
-  const [title, setTitle] = useState<string>("");
+  // const [title, setTitle] = useState<string>("");
   const [size, setSize] = useState<string>("");
   const [progress, setProgress] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
@@ -174,7 +174,7 @@ function App() {
         },
         title: {
           display: true,
-          text: title || "Data Chart",
+          text:"Data Chart",
         },
         zoom: {
           zoom: {
