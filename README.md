@@ -1,3 +1,23 @@
+# Updating Website Deployment
+In order to make edits to the website clone the repository and navigate to the project directory:
+          
+    git clone https://github.com/Alabama-Rocketry-Association/csv-converter
+    cd csv-converter
+Install the necessary dependencies:
+
+    npm install .
+    npm install gh-pages
+Once the edits have been made, push changes and run:
+
+    npm run build
+    npm run deploy
+      
+
+
+
+
+
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
