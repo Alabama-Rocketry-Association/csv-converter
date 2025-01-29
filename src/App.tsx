@@ -28,7 +28,6 @@ ChartJS.register(
 interface DataPoint {
   [key: string]: string | number;
 }
-const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN;
 
 const fetchCSVFiles = async () => {
   const repoUrl =
@@ -36,9 +35,6 @@ const fetchCSVFiles = async () => {
 
   try {
     const response = await fetch(repoUrl, {
-      headers: {
-        Authorization: `token ${GITHUB_TOKEN}`,
-      },
     });
 
     if (!response.ok) throw new Error("Failed to fetch CSV list");
@@ -101,7 +97,7 @@ function App() {
     setMinimum(newVisibleMin);
     setMaximum(newVisibleMax);
 
-    console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
+    // console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
   };
 
   const calculatedSizeValue = (visibleRange: number, maxResolution: number, minResolution: number) => {
@@ -321,10 +317,6 @@ function App() {
     
     return <Line data={chartData} options={options} />;
   };
-  
-  
-  
-  
 
   const renderVariableCheckboxes = () => {
     if (!data || data.length === 0) return null;
