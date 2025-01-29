@@ -46,7 +46,6 @@ function App() {
   const [visibleMax, setVisibleMax] = useState<number>(0);
   const [visibleRange, setVisibleRange] = useState<number>(1);
   
-  const [csvLength, setCsvLength] = useState<number>(0);
   const maxResolution = 1;
   const minResolution = 100;
 
@@ -69,10 +68,10 @@ function App() {
     //   visibleMax: newVisibleMax,
     //   visibleRange: newVisibleRange,
     // });
-    console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleMin, newVisibleMax, newVisibleRange, maxResolution, minResolution));
+    console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
   };
 
-  const calculatedSizeValue = (visibleMin: number, visibleMax: number, visibleRange: number, maxResolution: number, minResolution: number) => {
+  const calculatedSizeValue = (visibleRange: number, maxResolution: number, minResolution: number) => {
     const rangeRatio = visibleRange / (secondsElapsed * maxResolution);
   return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
   }
@@ -93,7 +92,6 @@ function App() {
         const header = lines[0].split(",");
         const chunkSize = 5000;
         const totalLines = lines.length;
-        setCsvLength(totalLines);
         let currentLine = 1;
         const allData: DataPoint[] = [];
 
@@ -172,7 +170,7 @@ function App() {
       return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
     })
     .filter((point, index) => {
-      let sizeValue = calculatedSizeValue(visibleMin, visibleMax, visibleRange, maxResolution, minResolution);
+      let sizeValue = calculatedSizeValue(visibleRange, maxResolution, minResolution);
       sizeValue = Math.floor(sizeValue);
       return sizeValue > 0
         ? index % sizeValue === 0 || point["messages"] != null
@@ -181,10 +179,14 @@ function App() {
   
     // Check if filteredData is empty
     if (filteredData.length === 0) {
+      setMinimum(0);
+      setMaximum(Infinity);
+      setVisibleMin(0);
+      setVisibleMax(secondsElapsed);
       return (
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg   mt-4 max-w-xl mx-auto">
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg mt-4 max-w-xl mx-auto">
           <strong className="font-semibold text-xl">Warning:</strong>
-          <span className="block sm:inline text-lg"> No data available in the given timestamp range.</span>
+          <span className="block sm:inline text-lg"> No data available in the given timestamp range. Resetting zoom...</span>
         </div>
       );
     }
@@ -355,7 +357,7 @@ function App() {
             <div className="text-center">
               <h1>Enlarged points contain messages</h1>
               </div>
-              <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleMin, visibleMax, visibleRange, maxResolution, minResolution))} points</p>
+              <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
           {renderGraph()}
         </div>
       </div>
