@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
+import Navbar from "./components/Navbar";
 //Eventually enable this for image export
 // import ChartJsImage from 'chartjs-to-image';
 
@@ -179,14 +180,10 @@ function App() {
   
     // Check if filteredData is empty
     if (filteredData.length === 0) {
-      setMinimum(0);
-      setMaximum(Infinity);
-      setVisibleMin(0);
-      setVisibleMax(secondsElapsed);
       return (
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg mt-4 max-w-xl mx-auto">
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg   mt-4 max-w-xl mx-auto">
           <strong className="font-semibold text-xl">Warning:</strong>
-          <span className="block sm:inline text-lg"> No data available in the given timestamp range. Resetting zoom...</span>
+          <span className="block sm:inline text-lg"> No data available in the given timestamp range.</span>
         </div>
       );
     }
@@ -239,7 +236,7 @@ function App() {
             pinch: {
               enabled: true,
             },
-            mode: "x" as const,
+            mode: "xy" as const,
             onZoom: ({ chart }: any) => handleChange(chart),
           },
           pan: {
@@ -284,7 +281,7 @@ function App() {
         },
       },
     };
-  
+    
     return <Line data={chartData} options={options} />;
   };
   
@@ -319,49 +316,55 @@ function App() {
   };
 
   return (
-    <div className="App max-w-6xl mx-auto p-6">
-      <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
+    <>
+    <div>
+      <Navbar />
+    </div>
+    <div className=" h-full w-full mx-auto p-6 flex flex-col md:flex-row">
 
-      {/* Top section for inputs */}
-      <div className="flex flex-col space-y-4 mb-6">
+      <div className="flex-1">
+        <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
 
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileUpload}
-          className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
-        />
-      </div>
-
-      {/* Section below for toggle variables and graph */}
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Left side: Toggle Variables */}
-        <div className="flex-1">
-          {renderVariableCheckboxes()}
+        {/* Top section for inputs */}
+        <div className="flex flex-col space-y-4 mb-6">
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
+          />
         </div>
 
-        {/* Right side: Graph */}
-        <div className="w-full h-full"> {/* Full width and a custom height */}
-        {loading && (
-            <div className="mt-4">
-              <div className="w-full bg-gray-200 rounded-full">
-                <div
-                  className="bg-blue-500 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-l-full"
-                  style={{ width: `${progress}%` }}
-                >
-                  {Math.round(progress)}% - Loading data...
+        {/* Section below for toggle variables and graph */}
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Left side: Toggle Variables */}
+          <div className="flex-1">
+            {renderVariableCheckboxes()}
+          </div>
+          {/* Right side: Graph */}
+          <div className="w-full h-full"> {/* Full width and a custom height */}
+            {loading && (
+              <div className="mt-4">
+                <div className="w-full bg-gray-200 rounded-full">
+                  <div
+                    className="bg-blue-500 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-l-full"
+                    style={{ width: `${progress}%` }}
+                  >
+                    {Math.round(progress)}% - Loading data...
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
             <div className="text-center">
               <h1>Enlarged points contain messages</h1>
-              </div>
-              <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
-          {renderGraph()}
+            </div>
+            <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
+            {renderGraph()}
+          </div>
         </div>
       </div>
     </div>
+    </>
   );
 }
 

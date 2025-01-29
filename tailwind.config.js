@@ -7,5 +7,6 @@ export default {
   theme: {
     extend: {}, // Extend Tailwind's default theme if needed
   },
-  plugins: [], // Add Tailwind plugins here if needed
+  plugins: [    require('daisyui'),
+  ], // Add Tailwind plugins here if needed
 };
