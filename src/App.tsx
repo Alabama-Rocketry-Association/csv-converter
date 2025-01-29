@@ -67,6 +67,7 @@ function App() {
   const [maximum, setMaximum] = useState<number>(Infinity);
   const [csvFiles, setCsvFiles] = useState<{ name: string; url: string }[]>([]);
 
+  const [dependentVariable, setDependentVariable] = useState<string>("");
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
 
   const [visibleMin, setVisibleMin] = useState<number>(0);
@@ -107,8 +108,8 @@ function App() {
 
   const handleFileUpload = async (input: File | string) => {
     setLoading(true);
-
     try {
+
       let text = "";
   
       if (typeof input === "string") {
@@ -132,7 +133,9 @@ function App() {
       const totalLines = lines.length;
       let currentLine = 1;
       const allData: DataPoint[] = [];
-  
+      
+      setDependentVariable(header[0]);
+
       const processChunk = () => {
         const chunk = lines.slice(currentLine, currentLine + chunkSize);
         currentLine += chunkSize;
@@ -155,8 +158,8 @@ function App() {
           setData(allData);
           setLoading(false);
   
-          const initialTimestamp = allData[0]["timestamp"] as number;
-          const finalTimestamp = allData[allData.length - 1]["timestamp"] as number;
+          const initialTimestamp = allData[0][header[0]] as number;
+          const finalTimestamp = allData[allData.length - 1][header[0]] as number;
           setVisibleMax(finalTimestamp - initialTimestamp);
           setSecondsElapsed(finalTimestamp - initialTimestamp);
         }
@@ -185,16 +188,16 @@ function App() {
   const renderGraph = () => {
     if (!data) return <p>No data to display</p>;
   
-    if (!data[0].hasOwnProperty("timestamp")) {
+    if (!data[0].hasOwnProperty(dependentVariable)) {
       return (
         <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg mt-4 max-w-xl mx-auto">
           <strong className="font-semibold text-xl">Error:</strong>
-          <span className="block sm:inline text-lg"> No "timestamp" field found in the data</span>
+          <span className="block sm:inline text-lg"> No dependent variable field found in the data</span>
         </div>
       );
     }
   
-    const initialTimestamp = (data[0]["timestamp"] as number);
+    const initialTimestamp = (data[0][dependentVariable] as number);
 
   
     const adjustedMinimum = minimum + initialTimestamp;
@@ -202,7 +205,7 @@ function App() {
 
     const filteredData = data
     .filter((point) => {
-      const timestamp = point["timestamp"] as number;
+      const timestamp = point[dependentVariable] as number;
       return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
     })
     .filter((point, index) => {
@@ -214,6 +217,14 @@ function App() {
     });
   
     if (filteredData.length === 0) {
+      handleChange({
+        scales: {
+          x: {
+        min: 0,
+        max: secondsElapsed,
+          },
+        },
+      });
       return (
         <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg   mt-4 max-w-xl mx-auto">
           <strong className="font-semibold text-xl">Warning:</strong>
@@ -222,17 +233,17 @@ function App() {
       );
     }
   
-    const labels = filteredData.map((point) => (point["timestamp"] as number) - initialTimestamp);
+    const labels = filteredData.map((point) => (point[dependentVariable] as number) - initialTimestamp);
     const messages = filteredData.map((point) => (point["messages"] ? point["messages"] : null));
   
     const datasets = Object.keys(filteredData[0])
-      .filter((key) => key !== "timestamp" && key !== "messages" && selectedVariables.has(key)) // Filter based on toggled variables
+      .filter((key) => key !== dependentVariable && key !== "messages" && selectedVariables.has(key)) // Filter based on toggled variables
       .map((key, index) => {
         const color = `hsl(${(index * 360) / Object.keys(filteredData[0]).length}, 100%, 50%)`;
         return {
           label: key,
           data: filteredData.map((point, idx) => ({
-            x: (point["timestamp"] as number) - initialTimestamp,
+            x: (point[dependentVariable] as number) - initialTimestamp,
             y: point[key],         
             message: messages[idx]
           })),
@@ -321,7 +332,7 @@ function App() {
   const renderVariableCheckboxes = () => {
     if (!data || data.length === 0) return null;
 
-    const availableVariables = Object.keys(data[0]).filter((key) => key !== "timestamp" && key !== "messages");
+    const availableVariables = Object.keys(data[0]).filter((key) => key !== dependentVariable && key !== "messages");
 
     return (
       <div className="mt-4">
