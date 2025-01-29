@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState} from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -30,15 +30,55 @@ interface DataPoint {
   [key: string]: string | number;
 }
 
+
 function App() {
   const [data, setData] = useState<DataPoint[] | null>(null);
   // const [title, setTitle] = useState<string>("");
-  const [size, setSize] = useState<string>("");
   const [progress, setProgress] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set());
   const [minimum, setMinimum] = useState<number>(0);
   const [maximum, setMaximum] = useState<number>(Infinity);
+
+  const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
+
+  const [visibleMin, setVisibleMin] = useState<number>(0);
+  const [visibleMax, setVisibleMax] = useState<number>(0);
+  const [visibleRange, setVisibleRange] = useState<number>(1);
+  
+  const [csvLength, setCsvLength] = useState<number>(0);
+  const maxResolution = 1;
+  const minResolution = 100;
+
+
+  const handleChange = (chart: any) => {
+    const xScale = chart.scales["x"];
+
+    const newVisibleMin = xScale.min;
+    const newVisibleMax = xScale.max;
+    const newVisibleRange = xScale.max - xScale.min;
+  
+    setVisibleMin(newVisibleMin);
+    setVisibleMax(newVisibleMax);
+    setVisibleRange(newVisibleRange);
+    setMinimum(newVisibleMin);
+    setMaximum(newVisibleMax);
+
+    // console.log("Zoom Updated:", {
+    //   visibleMin: newVisibleMin,
+    //   visibleMax: newVisibleMax,
+    //   visibleRange: newVisibleRange,
+    // });
+    console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleMin, newVisibleMax, newVisibleRange, maxResolution, minResolution));
+  };
+
+  const calculatedSizeValue = (visibleMin: number, visibleMax: number, visibleRange: number, maxResolution: number, minResolution: number) => {
+    const rangeRatio = visibleRange / (secondsElapsed * maxResolution);
+  return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
+  }
+
+  
+
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -53,6 +93,7 @@ function App() {
         const header = lines[0].split(",");
         const chunkSize = 5000;
         const totalLines = lines.length;
+        setCsvLength(totalLines);
         let currentLine = 1;
         const allData: DataPoint[] = [];
 
@@ -60,16 +101,14 @@ function App() {
           const chunk = lines.slice(currentLine, currentLine + chunkSize);
           currentLine += chunkSize;
         
-            chunk.forEach((row, index) => {
+            chunk.forEach((row) => {
             const values = row.split(",");
             const rowData: DataPoint = {};
             header.forEach((key, index) => {
               const value = values[index];
               rowData[key] = isNaN(parseFloat(value)) ? value : parseFloat(value);
             });
-            if (index % (size ? parseInt(size) : 1) === 0 || rowData["messages"] != null) {
-              allData.push(rowData);
-            }
+            allData.push(rowData);
             });
         
           setProgress(Math.min((currentLine / totalLines) * 100, 100));
@@ -79,9 +118,13 @@ function App() {
           } else {
             setData(allData);
             setLoading(false);
+
+            const initialTimestamp = allData[0]["timestamp"] as number;
+            const finalTimestamp = allData[allData.length - 1]["timestamp"] as number;
+            setVisibleMax(finalTimestamp - initialTimestamp);
+            setSecondsElapsed(finalTimestamp - initialTimestamp);
           }
         };
-        
 
         processChunk();
       };
@@ -116,15 +159,24 @@ function App() {
   
     // Extract the initialTimestamp before filtering
     const initialTimestamp = (data[0]["timestamp"] as number);
+
   
     // Adjust the minimum and maximum values by adding the initialTimestamp
     const adjustedMinimum = minimum + initialTimestamp;
     const adjustedMaximum = maximum + initialTimestamp;
-  
+
     // Filter data based on adjusted minimum and maximum timestamp
-    const filteredData = data.filter((point) => {
+    const filteredData = data
+    .filter((point) => {
       const timestamp = point["timestamp"] as number;
       return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
+    })
+    .filter((point, index) => {
+      let sizeValue = calculatedSizeValue(visibleMin, visibleMax, visibleRange, maxResolution, minResolution);
+      sizeValue = Math.floor(sizeValue);
+      return sizeValue > 0
+        ? index % sizeValue === 0 || point["messages"] != null
+        : true;
     });
   
     // Check if filteredData is empty
@@ -148,9 +200,9 @@ function App() {
         return {
           label: key,
           data: filteredData.map((point, idx) => ({
-            x: (point["timestamp"] as number) - initialTimestamp, // Use adjusted timestamp as x-coordinate
-            y: point[key],         // Use the variable value as y-coordinate
-            message: messages[idx] // Attach the message for tooltip callback
+            x: (point["timestamp"] as number) - initialTimestamp,
+            y: point[key],         
+            message: messages[idx]
           })),
           borderColor: `hsl(${(index * 360) / selectedVariables.size}, 100%, 50%)`,
           borderWidth: 2, // Thin lines for performance
@@ -168,6 +220,7 @@ function App() {
   
     const options = {
       responsive: true,
+      animation: false as const,
       plugins: {
         legend: {
           position: "top" as const,
@@ -185,14 +238,16 @@ function App() {
               enabled: true,
             },
             mode: "x" as const,
+            onZoom: ({ chart }: any) => handleChange(chart),
           },
           pan: {
             enabled: true,
             mode: "x" as const,
+            onPan: ({ chart }: any) => handleChange(chart),
           },
         },
         tooltip: {
-          mode: 'nearest' as const, // Ensures tooltip shows for nearest point, even if you're not directly on the line
+          mode: 'nearest' as const,
           intersect: false as const, 
           callbacks: {
             label: function (tooltipItem: any) {
@@ -209,10 +264,12 @@ function App() {
             display: true,
             text: "Timestamp (s)",
           },
-          type: "linear" as const, // Ensures the x-axis scales correctly for continuous numeric values
+          type: "linear" as const,
+          min: visibleMin,
+          max: visibleMax,
           ticks: {
             callback: function (value: any, index: number): string {
-              // Add tick mark for timestamps with messages
+
               return messages[index] ? "⬤" : value;
             },
           },
@@ -265,46 +322,7 @@ function App() {
 
       {/* Top section for inputs */}
       <div className="flex flex-col space-y-4 mb-6">
-        {/* <input
-          type="text"
-          placeholder="Enter a title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg"
-        /> */}
-        <input
-          type="text"
-          placeholder="Reduce Dataset Size (Sample every nth point)"
-          onChange={(e) => setSize((e.target as HTMLInputElement).value)}
-          className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg"
-        />
-        <div className="flex items-center space-x-4">
-          <h1>From timestamp</h1>
-          <input
-        type="number"
-        placeholder="Minimum Value"
-        onSubmit={(e) => setMinimum(parseInt((e.target as HTMLInputElement).value))} 
-        className="py-2 px-4 border border-gray-300 rounded-lg text-lg"
-          />
-          <h1>to</h1>
-          <input
-        type="number"
-        placeholder="Maximum Value"
-        onSubmit={(e) => setMaximum(parseInt((e.target as HTMLInputElement).value))} 
-        className="py-2 px-4 border border-gray-300 rounded-lg text-lg"
-          />
-            <button
-            onClick={() => {
-              const minInput = document.querySelector<HTMLInputElement>('input[placeholder="Minimum Value"]');
-              const maxInput = document.querySelector<HTMLInputElement>('input[placeholder="Maximum Value"]');
-              if (minInput) setMinimum(parseInt(minInput.value));
-              if (maxInput) setMaximum(parseInt(maxInput.value));
-            }}
-            className="py-2 px-4 bg-blue-500 text-white rounded-lg text-lg"
-            >
-            Submit
-            </button>
-        </div>
+
         <input
           type="file"
           accept=".csv"
@@ -335,8 +353,9 @@ function App() {
             </div>
           )}
             <div className="text-center">
-              <p>Enlarged points contain messages</p>
+              <h1>Enlarged points contain messages</h1>
               </div>
+              <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleMin, visibleMax, visibleRange, maxResolution, minResolution))} points</p>
           {renderGraph()}
         </div>
       </div>
