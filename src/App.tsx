@@ -1,4 +1,4 @@
-import { useState} from "react";
+import { useState, useEffect} from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -13,8 +13,6 @@ import {
 import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
-//Eventually enable this for image export
-// import ChartJsImage from 'chartjs-to-image';
 
 ChartJS.register(
   CategoryScale,
@@ -30,16 +28,48 @@ ChartJS.register(
 interface DataPoint {
   [key: string]: string | number;
 }
+const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN;
 
+const fetchCSVFiles = async () => {
+  const repoUrl =
+    "https://api.github.com/repos/Alabama-Rocketry-Association/csv-converter/contents/TestData";
+
+  try {
+    const response = await fetch(repoUrl, {
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+      },
+    });
+
+    if (!response.ok) throw new Error("Failed to fetch CSV list");
+
+    const data = await response.json();
+    return data
+      .filter((file: any) => file.name.endsWith(".csv"))
+      .map((file: any) => ({
+        name: file.name,
+        url: file.download_url,
+      }));
+  } catch (error) {
+    
+    console.error("Error fetching CSV files:", error);
+    return (
+      <div>
+        <strong className="font-semibold text-xl">Error:</strong>
+        <span className="block sm:inline text-lg"> Failed to load CSV file</span>
+      </div>
+    );
+  }
+};
 
 function App() {
   const [data, setData] = useState<DataPoint[] | null>(null);
-  // const [title, setTitle] = useState<string>("");
   const [progress, setProgress] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set());
   const [minimum, setMinimum] = useState<number>(0);
   const [maximum, setMaximum] = useState<number>(Infinity);
+  const [csvFiles, setCsvFiles] = useState<{ name: string; url: string }[]>([]);
 
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
 
@@ -49,6 +79,13 @@ function App() {
   
   const maxResolution = 1;
   const minResolution = 100;
+
+  useEffect(() => {
+    fetchCSVFiles().then((files) => {
+      setCsvFiles(files);
+      setLoading(false);
+    });
+  }, []);
 
 
   const handleChange = (chart: any) => {
@@ -64,11 +101,6 @@ function App() {
     setMinimum(newVisibleMin);
     setMaximum(newVisibleMax);
 
-    // console.log("Zoom Updated:", {
-    //   visibleMin: newVisibleMin,
-    //   visibleMax: newVisibleMax,
-    //   visibleRange: newVisibleRange,
-    // });
     console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
   };
 
@@ -77,60 +109,70 @@ function App() {
   return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
   }
 
+  const handleFileUpload = async (input: File | string) => {
+    setLoading(true);
+
+    try {
+      let text = "";
   
-
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setLoading(true);
-      const reader = new FileReader();
-
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        const lines = text.split("\n").map((line) => line.trim()).filter(line => line !== "");
-
-        const header = lines[0].split(",");
-        const chunkSize = 5000;
-        const totalLines = lines.length;
-        let currentLine = 1;
-        const allData: DataPoint[] = [];
-
-        const processChunk = () => {
-          const chunk = lines.slice(currentLine, currentLine + chunkSize);
-          currentLine += chunkSize;
-        
-            chunk.forEach((row) => {
-            const values = row.split(",");
-            const rowData: DataPoint = {};
-            header.forEach((key, index) => {
-              const value = values[index];
-              rowData[key] = isNaN(parseFloat(value)) ? value : parseFloat(value);
-            });
-            allData.push(rowData);
-            });
-        
-          setProgress(Math.min((currentLine / totalLines) * 100, 100));
-        
-          if (currentLine < totalLines) {
-            setTimeout(processChunk, 0);
-          } else {
-            setData(allData);
-            setLoading(false);
-
-            const initialTimestamp = allData[0]["timestamp"] as number;
-            const finalTimestamp = allData[allData.length - 1]["timestamp"] as number;
-            setVisibleMax(finalTimestamp - initialTimestamp);
-            setSecondsElapsed(finalTimestamp - initialTimestamp);
-          }
-        };
-
-        processChunk();
+      if (typeof input === "string") {
+        // Case: Fetch CSV from GitHub URL
+        const response = await fetch(input);
+        if (!response.ok) throw new Error("Failed to fetch CSV file.");
+        text = await response.text();
+      } else {
+        // Case: Read local file upload
+        const reader = new FileReader();
+        text = await new Promise<string>((resolve) => {
+          reader.onload = (event) => resolve(event.target?.result as string);
+          reader.readAsText(input);
+        });
+      }
+  
+      const lines = text.split("\n").map((line) => line.trim()).filter(line => line !== "");
+  
+      const header = lines[0].split(",");
+      const chunkSize = 5000;
+      const totalLines = lines.length;
+      let currentLine = 1;
+      const allData: DataPoint[] = [];
+  
+      const processChunk = () => {
+        const chunk = lines.slice(currentLine, currentLine + chunkSize);
+        currentLine += chunkSize;
+      
+        chunk.forEach((row) => {
+          const values = row.split(",");
+          const rowData: DataPoint = {};
+          header.forEach((key, index) => {
+            const value = values[index];
+            rowData[key] = isNaN(parseFloat(value)) ? value : parseFloat(value);
+          });
+          allData.push(rowData);
+        });
+      
+        setProgress(Math.min((currentLine / totalLines) * 100, 100));
+      
+        if (currentLine < totalLines) {
+          setTimeout(processChunk, 0);
+        } else {
+          setData(allData);
+          setLoading(false);
+  
+          const initialTimestamp = allData[0]["timestamp"] as number;
+          const finalTimestamp = allData[allData.length - 1]["timestamp"] as number;
+          setVisibleMax(finalTimestamp - initialTimestamp);
+          setSecondsElapsed(finalTimestamp - initialTimestamp);
+        }
       };
-
-      reader.readAsText(file);
+  
+      processChunk();
+    } catch (error) {
+      console.error("Error processing CSV:", error);
+      setLoading(false);
     }
   };
+  
 
   const toggleVariable = (variable: string) => {
     setSelectedVariables((prev) => {
@@ -156,15 +198,12 @@ function App() {
       );
     }
   
-    // Extract the initialTimestamp before filtering
     const initialTimestamp = (data[0]["timestamp"] as number);
 
   
-    // Adjust the minimum and maximum values by adding the initialTimestamp
     const adjustedMinimum = minimum + initialTimestamp;
     const adjustedMaximum = maximum + initialTimestamp;
 
-    // Filter data based on adjusted minimum and maximum timestamp
     const filteredData = data
     .filter((point) => {
       const timestamp = point["timestamp"] as number;
@@ -178,7 +217,6 @@ function App() {
         : true;
     });
   
-    // Check if filteredData is empty
     if (filteredData.length === 0) {
       return (
         <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg   mt-4 max-w-xl mx-auto">
@@ -188,8 +226,7 @@ function App() {
       );
     }
   
-    // Extract labels and messages from the filtered data
-    const labels = filteredData.map((point) => (point["timestamp"] as number) - initialTimestamp); // Adjusted timestamp for labels
+    const labels = filteredData.map((point) => (point["timestamp"] as number) - initialTimestamp);
     const messages = filteredData.map((point) => (point["messages"] ? point["messages"] : null));
   
     const datasets = Object.keys(filteredData[0])
@@ -318,31 +355,29 @@ function App() {
   return (
     <>
     <div>
-      <Navbar />
+      <Navbar data= {csvFiles} onSelect = {handleFileUpload}/>
     </div>
     <div className=" h-full w-full mx-auto p-6 flex flex-col md:flex-row">
 
       <div className="flex-1">
         <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
 
-        {/* Top section for inputs */}
         <div className="flex flex-col space-y-4 mb-6">
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
-          />
+          <input 
+          type="file" 
+          accept=".csv"
+          className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileUpload(file);
+          }} />
         </div>
 
-        {/* Section below for toggle variables and graph */}
         <div className="flex flex-col md:flex-row gap-6">
-          {/* Left side: Toggle Variables */}
           <div className="flex-1">
             {renderVariableCheckboxes()}
           </div>
-          {/* Right side: Graph */}
-          <div className="w-full h-full"> {/* Full width and a custom height */}
+          <div className="w-full h-full"> 
             {loading && (
               <div className="mt-4">
                 <div className="w-full bg-gray-200 rounded-full">

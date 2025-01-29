@@ -1,7 +1,13 @@
 import ARA from '/ARA.jpeg';
-export default function Navbar() {
 
-
+interface NavbarProps {
+  data: {
+    name: string;
+    url: string;
+  }[];
+  onSelect?: (name: string) => void;
+}
+const Navbar: React.FC<NavbarProps> = ({ data = [], onSelect }) => {
 return(
 <div className="navbar bg-base-100">
   <div className="flex-1">
@@ -17,20 +23,21 @@ return(
             src={ARA} />
         </div>
       </div>
+
       <ul
         tabIndex={0}
         className="menu menu-sm dropdown-content rounded-box z-[1] mt-3 w-52 p-2 shadow bg-blue-500">
-        <li>
-          <a className="justify-between">
-        Profile
-        <span className="badge">New</span>
-          </a>
-        </li>
-        <li><a>Settings</a></li>
-        <li><a>Logout</a></li>
+        <h1 className="text-center font-bold text-black">CSVs in Repo</h1>
+        {data.map((item, index) => (
+          <li key={index} onClick={() => onSelect && onSelect(item.url)}>
+        <a>{item.name}</a>
+          </li>
+        ))}
       </ul>
     </div>
   </div>
 </div>
 );
 }
+
+export default Navbar;
