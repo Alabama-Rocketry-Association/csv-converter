@@ -102,7 +102,7 @@ function App() {
   };
 
   const calculatedSizeValue = (visibleRange: number, maxResolution: number, minResolution: number) => {
-    const rangeRatio = visibleRange / (secondsElapsed * maxResolution);
+    const rangeRatio = (visibleRange * selectedVariables.size) / (secondsElapsed * maxResolution);
   return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
   }
 
