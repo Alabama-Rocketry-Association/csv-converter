@@ -73,9 +73,10 @@ function App() {
   const [visibleMin, setVisibleMin] = useState<number>(0);
   const [visibleMax, setVisibleMax] = useState<number>(0);
   const [visibleRange, setVisibleRange] = useState<number>(1);
+  const [sampleRate, setSampleRate] = useState<number>(20);
   
   const maxResolution = 1;
-  const minResolution = 100;
+  const [minResolution, setMinResolution] = useState<number>(100);
 
   useEffect(() => {
     fetchCSVFiles().then((files) => {
@@ -91,6 +92,7 @@ function App() {
     const newVisibleMin = xScale.min;
     const newVisibleMax = xScale.max;
     const newVisibleRange = xScale.max - xScale.min;
+    setMinResolution(Math.ceil((newVisibleRange * sampleRate) / 500));
   
     setVisibleMin(newVisibleMin);
     setVisibleMax(newVisibleMax);
@@ -162,9 +164,9 @@ function App() {
           const finalTimestamp = allData[allData.length - 1][header[0]] as number;
           setVisibleMax(finalTimestamp - initialTimestamp);
           setSecondsElapsed(finalTimestamp - initialTimestamp);
+          setSampleRate(totalLines / (finalTimestamp - initialTimestamp));
         }
       };
-  
       processChunk();
     } catch (error) {
       console.error("Error processing CSV:", error);
@@ -374,6 +376,9 @@ function App() {
             const file = e.target.files?.[0];
             if (file) handleFileUpload(file);
           }} />
+          <input
+
+          />
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">
