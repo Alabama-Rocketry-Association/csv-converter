@@ -376,9 +376,6 @@ function App() {
             const file = e.target.files?.[0];
             if (file) handleFileUpload(file);
           }} />
-          <input
-
-          />
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">
