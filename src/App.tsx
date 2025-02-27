@@ -84,6 +84,9 @@ function App() {
   const [globalMin, setGlobalMin] = useState<number>(0);
   const [globalMax, setGlobalMax] = useState<number>(Infinity);
 
+  const [isZoomX, setIsZoomX] = useState<boolean>(true);
+  const [isZoomY, setIsZoomY] = useState<boolean>(true);
+
 
   useEffect(() => {
     fetchCSVFiles().then((files) => {
@@ -93,21 +96,21 @@ function App() {
   }, []);
 
 
-  const handleChange = (chart: any) => {
+  const handleChange = (chart: any, zoom?: boolean) => {
     const xScale = chart.scales["x"];
     const yScale = chart.scales["y"];
-    if (xScale.min < globalMin) {
+    if (xScale.min < globalMin && !zoom) {
       xScale.min = globalMin;
       xScale.max = visibleMax;
       yScale.min = fixedMin;
       yScale.max = fixedMax
       setVisibleRange(xScale.max - xScale.min);
       return;
-    } else if (xScale.max > globalMax) {
+    } else if (xScale.max > globalMax && !zoom) {
       xScale.max = globalMax;
       xScale.min = visibleMin;
       yScale.min = fixedMin;
-      yScale.max = fixedMax
+      yScale.max = fixedMax;
       setVisibleRange(xScale.max - xScale.min);
       return;
     }
@@ -308,8 +311,8 @@ function App() {
         pinch: {
           enabled: true,
         },
-        mode: "xy" as const,
-        onZoom: ({ chart }: any) => handleChange(chart),
+        mode: isZoomX && isZoomY ? "xy" : isZoomX ? "x" : isZoomY ? "y" : (undefined as "x" | "y" | "xy" | undefined),
+        onZoom: ({ chart }: any) => handleChange(chart, true),
         },
         pan: {
         enabled: true,
@@ -426,6 +429,16 @@ function App() {
               <h1>Enlarged points contain messages</h1>
             </div>
             <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
+            <div className="flex justify-center space-x-4">
+              <div className="flex items-center space-x-2">
+              <h1>X Zoom</h1>
+              <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomX(!isZoomX)} defaultChecked />
+              </div>
+              <div className="flex items-center space-x-2">
+              <h1>Y Zoom</h1>
+              <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomY(!isZoomY)} defaultChecked />
+              </div>
+            </div>
             {renderGraph()}
           </div>
         </div>
