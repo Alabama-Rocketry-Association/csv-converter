@@ -78,6 +78,13 @@ function App() {
   const maxResolution = 1;
   const [minResolution, setMinResolution] = useState<number>(100);
 
+  const [fixedMin, setFixedMin] = useState<number>();
+  const [fixedMax, setFixedMax] = useState<number>();
+
+  const [globalMin, setGlobalMin] = useState<number>(0);
+  const [globalMax, setGlobalMax] = useState<number>(Infinity);
+
+
   useEffect(() => {
     fetchCSVFiles().then((files) => {
       setCsvFiles(files);
@@ -88,18 +95,35 @@ function App() {
 
   const handleChange = (chart: any) => {
     const xScale = chart.scales["x"];
-
+    const yScale = chart.scales["y"];
+    if (xScale.min < globalMin) {
+      xScale.min = globalMin;
+      xScale.max = visibleMax;
+      yScale.min = fixedMin;
+      yScale.max = fixedMax
+      setVisibleRange(xScale.max - xScale.min);
+      return;
+    } else if (xScale.max > globalMax) {
+      xScale.max = globalMax;
+      xScale.min = visibleMin;
+      yScale.min = fixedMin;
+      yScale.max = fixedMax
+      setVisibleRange(xScale.max - xScale.min);
+      return;
+    }
+    console.log(globalMax, globalMin);
+   
     const newVisibleMin = xScale.min;
     const newVisibleMax = xScale.max;
     const newVisibleRange = xScale.max - xScale.min;
     setMinResolution(Math.ceil((newVisibleRange * sampleRate) / 500));
-  
     setVisibleMin(newVisibleMin);
     setVisibleMax(newVisibleMax);
     setVisibleRange(newVisibleRange);
     setMinimum(newVisibleMin);
     setMaximum(newVisibleMax);
-
+    setFixedMax(yScale.max);
+    setFixedMin(yScale.min);
     // console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
   };
 
@@ -161,7 +185,9 @@ function App() {
           setLoading(false);
   
           const initialTimestamp = allData[0][header[0]] as number;
+          setGlobalMin(0);
           const finalTimestamp = allData[allData.length - 1][header[0]] as number;
+          setGlobalMax(finalTimestamp - initialTimestamp);
           setVisibleMax(finalTimestamp - initialTimestamp);
           setSecondsElapsed(finalTimestamp - initialTimestamp);
           setSampleRate(totalLines / (finalTimestamp - initialTimestamp));
@@ -267,64 +293,65 @@ function App() {
       responsive: true,
       animation: false as const,
       plugins: {
-        legend: {
-          position: "top" as const,
-        },
-        title: {
-          display: true,
-          text:"Data Chart",
-        },
+      legend: {
+        position: "top" as const,
+      },
+      title: {
+        display: true,
+        text: "Data Chart",
+      },
+      zoom: {
         zoom: {
-          zoom: {
-            wheel: {
-              enabled: true,
-            },
-            pinch: {
-              enabled: true,
-            },
-            mode: "xy" as const,
-            onZoom: ({ chart }: any) => handleChange(chart),
-          },
-          pan: {
-            enabled: true,
-            mode: "x" as const,
-            onPan: ({ chart }: any) => handleChange(chart),
-          },
+        wheel: {
+          enabled: true,
         },
-        tooltip: {
-          mode: 'nearest' as const,
-          intersect: false as const, 
-          callbacks: {
-            label: function (tooltipItem: any) {
-              const point = tooltipItem.raw;
-              const message = point.message ? `Message: ${point.message}` : "";
-              return `${tooltipItem.dataset.label}: ${tooltipItem.raw.y}${message ? `\n${message}` : ""}`;
-            },
-          },
+        pinch: {
+          enabled: true,
+        },
+        mode: "xy" as const,
+        onZoom: ({ chart }: any) => handleChange(chart),
+        },
+        pan: {
+        enabled: true,
+        mode: "xy" as const,
+        onPan: ({ chart }: any) => handleChange(chart),
         },
       },
+      tooltip: {
+        mode: 'nearest' as const,
+        intersect: false as const,
+        callbacks: {
+        label: function (tooltipItem: any) {
+          const point = tooltipItem.raw;
+          const message = point.message ? `Message: ${point.message}` : "";
+          return `${tooltipItem.dataset.label}: ${tooltipItem.raw.y}${message ? `\n${message}` : ""}`;
+        },
+        },
+      },
+      },
       scales: {
-        x: {
-          title: {
-            display: true,
-            text: "Timestamp (s)",
-          },
-          type: "linear" as const,
-          min: visibleMin,
-          max: visibleMax,
-          ticks: {
-            callback: function (value: any, index: number): string {
-
-              return messages[index] ? "⬤" : value;
-            },
-          },
+      x: {
+        title: {
+        display: true,
+        text: "Timestamp (s)",
         },
-        y: {
-          title: {
-            display: true,
-            text: "Value",
-          },
+        type: "linear" as const,
+        min: visibleMin,
+        max: visibleMax,
+        ticks: {
+        callback: function (value: any, index: number): string {
+          return messages[index] ? "⬤" : value;
         },
+        },
+      },
+      y: {
+        title: {
+        display: true,
+        text: "Value",
+        },
+        min: fixedMin,
+        max: fixedMax,
+      },
       },
     };
     
@@ -370,7 +397,7 @@ function App() {
         <div className="flex flex-col space-y-4 mb-6">
           <input 
           type="file" 
-          accept=".csv"
+          accept=".csv, .xlsx"
           className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
           onChange={(e) => {
             const file = e.target.files?.[0];
