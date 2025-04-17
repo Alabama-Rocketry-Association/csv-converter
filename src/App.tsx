@@ -1,4 +1,4 @@
-import { useState, useEffect} from "react";
+import { useState, useEffect, useRef } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -11,7 +11,7 @@ import {
   Legend,
 } from "chart.js";
 import "tailwindcss/tailwind.css";
-import zoomPlugin from "chartjs-plugin-zoom";
+import zoomPlugin, { resetZoom } from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
 
 ChartJS.register(
@@ -22,8 +22,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-    zoomPlugin
-  );
+  zoomPlugin
+);
 
 interface DataPoint {
   [key: string]: string | number;
@@ -47,7 +47,7 @@ const fetchCSVFiles = async () => {
         url: file.download_url,
       }));
   } catch (error) {
-    
+
     console.error("Error fetching CSV files:", error);
     return (
       <div>
@@ -74,7 +74,7 @@ function App() {
   const [visibleMax, setVisibleMax] = useState<number>(0);
   const [visibleRange, setVisibleRange] = useState<number>(1);
   const [sampleRate, setSampleRate] = useState<number>(20);
-  
+
   const maxResolution = 1;
   const [minResolution, setMinResolution] = useState<number>(100);
 
@@ -95,44 +95,41 @@ function App() {
     });
   }, []);
 
-
-  const handleChange = (chart: any, zoom?: boolean) => {
+  // Store previous range to compare before updating state
+  let debounceTimer: NodeJS.Timeout | null = null;
+  
+  const handleChange = (chart: any) => {
     const xScale = chart.scales["x"];
     const yScale = chart.scales["y"];
-    if (xScale.min < globalMin && !zoom) {
-      xScale.min = globalMin;
-      xScale.max = visibleMax;
-      yScale.min = fixedMin;
-      yScale.max = fixedMax
-      setVisibleRange(xScale.max - xScale.min);
-      return;
-    } else if (xScale.max > globalMax && !zoom) {
-      xScale.max = globalMax;
-      xScale.min = visibleMin;
-      yScale.min = fixedMin;
-      yScale.max = fixedMax;
-      setVisibleRange(xScale.max - xScale.min);
-      return;
-    }
-    console.log(globalMax, globalMin);
-   
-    const newVisibleMin = xScale.min;
-    const newVisibleMax = xScale.max;
-    const newVisibleRange = xScale.max - xScale.min;
-    setMinResolution(Math.ceil((newVisibleRange * sampleRate) / 500));
-    setVisibleMin(newVisibleMin);
-    setVisibleMax(newVisibleMax);
-    setVisibleRange(newVisibleRange);
-    setMinimum(newVisibleMin);
-    setMaximum(newVisibleMax);
-    setFixedMax(yScale.max);
-    setFixedMin(yScale.min);
-    // console.log("New Calculated Size Value:", calculatedSizeValue(newVisibleRange, maxResolution, minResolution));
-  };
+  
+    if (!xScale || !yScale) return;
+  
+    let currentMin = xScale.min;
+    let currentMax = xScale.max;
+    const range = currentMax - currentMin;
 
+    // Debounce state updates
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const newMinRes = Math.ceil((range * sampleRate) / 500);
+      if (newMinRes !== minResolution) {
+        setMinResolution(newMinRes);
+      }
+  
+      setVisibleMin(currentMin);
+      setVisibleMax(currentMax);
+      setVisibleRange(range);
+      setMinimum(currentMin);
+      setMaximum(currentMax);
+      setFixedMax(yScale.max);
+      setFixedMin(yScale.min);
+    }, 15);
+  };
+  
+  
   const calculatedSizeValue = (visibleRange: number, maxResolution: number, minResolution: number) => {
     const rangeRatio = (visibleRange * selectedVariables.size) / (secondsElapsed * maxResolution);
-  return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
+    return minResolution + (maxResolution - minResolution) * (1 - rangeRatio);
   }
 
   const handleFileUpload = async (input: File | string) => {
@@ -140,7 +137,7 @@ function App() {
     try {
 
       let text = "";
-  
+
       if (typeof input === "string") {
         // Case: Fetch CSV from GitHub URL
         const response = await fetch(input);
@@ -154,21 +151,21 @@ function App() {
           reader.readAsText(input);
         });
       }
-  
+
       const lines = text.split("\n").map((line) => line.trim()).filter(line => line !== "");
-  
+
       const header = lines[0].split(",");
       const chunkSize = 5000;
       const totalLines = lines.length;
       let currentLine = 1;
       const allData: DataPoint[] = [];
-      
+
       setDependentVariable(header[0]);
 
       const processChunk = () => {
         const chunk = lines.slice(currentLine, currentLine + chunkSize);
         currentLine += chunkSize;
-      
+
         chunk.forEach((row) => {
           const values = row.split(",");
           const rowData: DataPoint = {};
@@ -178,15 +175,15 @@ function App() {
           });
           allData.push(rowData);
         });
-      
+
         setProgress(Math.min((currentLine / totalLines) * 100, 100));
-      
+
         if (currentLine < totalLines) {
           setTimeout(processChunk, 0);
         } else {
           setData(allData);
           setLoading(false);
-  
+
           const initialTimestamp = allData[0][header[0]] as number;
           setGlobalMin(0);
           const finalTimestamp = allData[allData.length - 1][header[0]] as number;
@@ -202,7 +199,7 @@ function App() {
       setLoading(false);
     }
   };
-  
+
 
   const toggleVariable = (variable: string) => {
     setSelectedVariables((prev) => {
@@ -218,7 +215,7 @@ function App() {
 
   const renderGraph = () => {
     if (!data) return <p>No data to display</p>;
-  
+
     if (!data[0].hasOwnProperty(dependentVariable)) {
       return (
         <div className="bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-lg mt-4 max-w-xl mx-auto">
@@ -227,137 +224,142 @@ function App() {
         </div>
       );
     }
-  
+
     const initialTimestamp = (data[0][dependentVariable] as number);
 
-  
+
     const adjustedMinimum = minimum + initialTimestamp;
     const adjustedMaximum = maximum + initialTimestamp;
 
     const filteredData = data
-    .filter((point) => {
-      const timestamp = point[dependentVariable] as number;
-      return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
-    })
-    .filter((point, index) => {
-      let sizeValue = calculatedSizeValue(visibleRange, maxResolution, minResolution);
-      sizeValue = Math.floor(sizeValue);
-      return sizeValue > 0
-        ? index % sizeValue === 0 || point["messages"] != null
-        : true;
-    });
-  
-    if (filteredData.length === 0) {
-      handleChange({
-        scales: {
-          x: {
-        min: 0,
-        max: secondsElapsed,
-          },
-        },
+      .filter((point) => {
+        const timestamp = point[dependentVariable] as number;
+        return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
+      })
+      .filter((point, index) => {
+        let sizeValue = calculatedSizeValue(visibleRange, maxResolution, minResolution);
+        sizeValue = Math.floor(sizeValue);
+        return sizeValue > 0
+          ? index % sizeValue === 0 || point["messages"] != null
+          : true;
       });
-      return (
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-lg   mt-4 max-w-xl mx-auto">
-          <strong className="font-semibold text-xl">Warning:</strong>
-          <span className="block sm:inline text-lg"> No data available in the given timestamp range.</span>
-        </div>
-      );
-    }
-  
+
+      if (filteredData.length === 0) {
+        return (
+          <Line
+            data={{
+              labels: [visibleMin, visibleMax],
+              datasets: [
+                {
+                  label: "No data in this range",
+                  data: [null, null],
+                  borderColor: "rgba(200, 200, 200, 0.3)",
+                  borderWidth: 2,
+                  pointRadius: 0,
+                  fill: false,
+                },
+              ],
+            }}
+          
+          />
+        );
+      }
+
     const labels = filteredData.map((point) => (point[dependentVariable] as number) - initialTimestamp);
     const messages = filteredData.map((point) => (point["messages"] ? point["messages"] : null));
-  
+
     const datasets = Object.keys(filteredData[0])
-      .filter((key) => key !== dependentVariable && key !== "messages" && selectedVariables.has(key)) // Filter based on toggled variables
+      .filter((key) => key !== dependentVariable && key !== "messages" && selectedVariables.has(key))
       .map((key, index) => {
         const color = `hsl(${(index * 360) / Object.keys(filteredData[0]).length}, 100%, 50%)`;
         return {
           label: key,
           data: filteredData.map((point, idx) => ({
             x: (point[dependentVariable] as number) - initialTimestamp,
-            y: point[key],         
+            y: point[key],
             message: messages[idx]
           })),
           borderColor: `hsl(${(index * 360) / selectedVariables.size}, 100%, 50%)`,
-          borderWidth: 2, // Thin lines for performance
-  
+          borderWidth: 2,
+
           backgroundColor: color + "80",
-          pointRadius: filteredData.map((point) => (point["messages"] ? 10 : 0)), // Only show points with messages
+          pointRadius: filteredData.map((point) => (point["messages"] ? 10 : 0)),
           pointHoverRadius: 8,
         };
       });
-  
+
     const chartData = {
       labels,
       datasets,
     };
-  
+
     const options = {
       responsive: true,
       animation: false as const,
       plugins: {
-      legend: {
-        position: "top" as const,
-      },
-      title: {
-        display: true,
-        text: "Data Chart",
-      },
-      zoom: {
+        legend: {
+          position: "top" as const,
+        },
+        title: {
+          display: true,
+          text: "Data Chart",
+        },
         zoom: {
-        wheel: {
-          enabled: true,
+          zoom: {
+            wheel: {
+              enabled: true,
+            },
+            pinch: {
+              enabled: true,
+            },
+            mode: isZoomX && isZoomY ? "xy" : isZoomX ? "x" : isZoomY ? "y" : (undefined as "x" | "y" | "xy" | undefined),
+            onZoom: ({ chart }: any) => handleChange(chart),
+          },
+          pan: {
+            enabled: true,
+            mode: "xy" as const,
+            threshold: 5,
+            onPan: ({ chart }: any) => handleChange(chart),
+          },
         },
-        pinch: {
-          enabled: true,
+        tooltip: {
+          mode: 'nearest' as const,
+          intersect: false as const,
+          callbacks: {
+            label: function (tooltipItem: any) {
+              const point = tooltipItem.raw;
+              const message = point.message ? `Message: ${point.message}` : "";
+              return `${tooltipItem.dataset.label}: ${tooltipItem.raw.y}${message ? `\n${message}` : ""}`;
+            },
+          },
         },
-        mode: isZoomX && isZoomY ? "xy" : isZoomX ? "x" : isZoomY ? "y" : (undefined as "x" | "y" | "xy" | undefined),
-        onZoom: ({ chart }: any) => handleChange(chart, true),
-        },
-        pan: {
-        enabled: true,
-        mode: "xy" as const,
-        onPan: ({ chart }: any) => handleChange(chart),
-        },
-      },
-      tooltip: {
-        mode: 'nearest' as const,
-        intersect: false as const,
-        callbacks: {
-        label: function (tooltipItem: any) {
-          const point = tooltipItem.raw;
-          const message = point.message ? `Message: ${point.message}` : "";
-          return `${tooltipItem.dataset.label}: ${tooltipItem.raw.y}${message ? `\n${message}` : ""}`;
-        },
-        },
-      },
       },
       scales: {
-      x: {
-        title: {
-        display: true,
-        text: "Timestamp (s)",
+        x: {
+          title: {
+            display: true,
+            text: "Timestamp (s)",
+          },
+          type: "linear" as const,
+          min: visibleMin,
+          max: visibleMax,
+          ticks: {
+            callback: function (value: any, index: number): string {
+              return messages[index] ? "⬤" : value;
+            },
+          },
         },
-        type: "linear" as const,
-        min: visibleMin,
-        max: visibleMax,
-        ticks: {
-        callback: function (value: any, index: number): string {
-          return messages[index] ? "⬤" : value;
+        y: {
+          title: {
+            display: true,
+            text: "Value",
+          },
+          min: fixedMin,
+          max: fixedMax,
         },
-        },
-      },
-      y: {
-        title: {
-        display: true,
-        text: "Value",
-        },
-        min: fixedMin,
-        max: fixedMax,
-      },
       },
     };
-    
+
     return <Line data={chartData} options={options} />;
   };
 
@@ -389,61 +391,61 @@ function App() {
 
   return (
     <>
-    <div>
-      <Navbar data= {csvFiles} onSelect = {handleFileUpload}/>
-    </div>
-    <div className=" h-full w-full mx-auto p-6 flex flex-col md:flex-row">
+      <div>
+        <Navbar data={csvFiles} onSelect={handleFileUpload} />
+      </div>
+      <div className=" h-full w-full mx-auto p-6 flex flex-col md:flex-row">
 
-      <div className="flex-1">
-        <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
+        <div className="flex-1">
+          <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
 
-        <div className="flex flex-col space-y-4 mb-6">
-          <input 
-          type="file" 
-          accept=".csv, .xlsx"
-          className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFileUpload(file);
-          }} />
-        </div>
-
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1">
-            {renderVariableCheckboxes()}
+          <div className="flex flex-col space-y-4 mb-6">
+            <input
+              type="file"
+              accept=".csv, .xlsx"
+              className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileUpload(file);
+              }} />
           </div>
-          <div className="w-full h-full"> 
-            {loading && (
-              <div className="mt-4">
-                <div className="w-full bg-gray-200 rounded-full">
-                  <div
-                    className="bg-blue-500 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-l-full"
-                    style={{ width: `${progress}%` }}
-                  >
-                    {Math.round(progress)}% - Loading data...
+
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1">
+              {renderVariableCheckboxes()}
+            </div>
+            <div className="w-full h-full">
+              {loading && (
+                <div className="mt-4">
+                  <div className="w-full bg-gray-200 rounded-full">
+                    <div
+                      className="bg-blue-500 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-l-full"
+                      style={{ width: `${progress}%` }}
+                    >
+                      {Math.round(progress)}% - Loading data...
+                    </div>
                   </div>
                 </div>
+              )}
+              <div className="text-center">
+                <h1>Enlarged points contain messages</h1>
               </div>
-            )}
-            <div className="text-center">
-              <h1>Enlarged points contain messages</h1>
+              <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
+              <div className="flex justify-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <h1>X Zoom</h1>
+                  <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomX(!isZoomX)} defaultChecked />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <h1>Y Zoom</h1>
+                  <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomY(!isZoomY)} defaultChecked />
+                </div>
+              </div>
+              {renderGraph()}
             </div>
-            <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
-            <div className="flex justify-center space-x-4">
-              <div className="flex items-center space-x-2">
-              <h1>X Zoom</h1>
-              <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomX(!isZoomX)} defaultChecked />
-              </div>
-              <div className="flex items-center space-x-2">
-              <h1>Y Zoom</h1>
-              <input type="checkbox" className="toggle toggle-success" onClick={() => setIsZoomY(!isZoomY)} defaultChecked />
-              </div>
-            </div>
-            {renderGraph()}
           </div>
         </div>
       </div>
-    </div>
     </>
   );
 }
