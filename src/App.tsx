@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Line } from "react-chartjs-2";
+import Papa from "papaparse";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -29,34 +30,71 @@ interface DataPoint {
   [key: string]: string | number;
 }
 
-const fetchCSVFiles = async () => {
-  const repoUrl =
-    "https://api.github.com/repos/Alabama-Rocketry-Association/csv-converter/contents/TestData";
+interface CSVFile {
+  name: string;
+  url: string;
+  content: any[];
+  path: string;      // full relative path in the repo
+  folder: string;    // derived folder name (optional)
+}
 
-  try {
-    const response = await fetch(repoUrl, {
-    });
+const GITHUB_API_ROOT =
+  "https://api.github.com/repos/Alabama-Rocketry-Association/csv-converter/contents/TestData";
 
-    if (!response.ok) throw new Error("Failed to fetch CSV list");
+export const fetchCSVFiles = async (): Promise<CSVFile[]> => {
+  const fetchCSVFilesRecursive = async (path: string): Promise<CSVFile[]> => {
+    try {
+      const response = await fetch(`${GITHUB_API_ROOT}${path ? `/${path}` : ""}`);
+      if (!response.ok) throw new Error(`Failed to fetch contents of: ${path}`);
 
-    const data = await response.json();
-    return data
-      .filter((file: any) => file.name.endsWith(".csv"))
-      .map((file: any) => ({
-        name: file.name,
-        url: file.download_url,
-      }));
-  } catch (error) {
+      const items = await response.json();
+      let results: CSVFile[] = [];
 
-    console.error("Error fetching CSV files:", error);
-    return (
-      <div>
-        <strong className="font-semibold text-xl">Error:</strong>
-        <span className="block sm:inline text-lg"> Failed to load CSV file</span>
-      </div>
-    );
-  }
+      for (const item of items) {
+        if (item.type === "dir") {
+          const subfolderFiles = await fetchCSVFilesRecursive(item.path.replace("TestData/", ""));
+          results = results.concat(subfolderFiles);
+        } else if (item.name.endsWith(".csv")) {
+          try {
+            const fileRes = await fetch(item.download_url);
+            const text = await fileRes.text();
+
+            const parsed = Papa.parse(text, {
+              header: true,
+              skipEmptyLines: true,
+            });
+
+          const fullFolderPath = item.path.includes("/")
+            ? item.path.substring(0, item.path.lastIndexOf("/"))
+            : "";
+          
+          const folder = fullFolderPath.startsWith("TestData/")
+            ? fullFolderPath.replace("TestData/", "")
+            : fullFolderPath;
+          
+            results.push({
+              name: item.name,
+              url: item.download_url,
+              path: item.path,
+              folder,
+              content: parsed.data,
+            });
+          } catch (err) {
+            console.error(`Failed to parse CSV ${item.name}:`, err);
+          }
+        }
+      }
+
+      return results;
+    } catch (err) {
+      console.error("Recursive fetch failed:", err);
+      return [];
+    }
+  };
+
+  return await fetchCSVFilesRecursive("");
 };
+
 
 function App() {
   const [data, setData] = useState<DataPoint[] | null>(null);
@@ -65,7 +103,7 @@ function App() {
   const [selectedVariables, setSelectedVariables] = useState<Set<string>>(new Set());
   const [minimum, setMinimum] = useState<number>(0);
   const [maximum, setMaximum] = useState<number>(Infinity);
-  const [csvFiles, setCsvFiles] = useState<{ name: string; url: string }[]>([]);
+  const [csvFiles, setCsvFiles] = useState<CSVFile[]>([]);
 
   const [dependentVariable, setDependentVariable] = useState<string>("");
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
@@ -90,6 +128,7 @@ function App() {
 
   useEffect(() => {
     fetchCSVFiles().then((files) => {
+      // console.log("Fetched CSV files:", files);
       setCsvFiles(files);
       setLoading(false);
     });
