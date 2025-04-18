@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect} from "react";
 import { Line } from "react-chartjs-2";
 import Papa from "papaparse";
 import {
@@ -12,7 +12,7 @@ import {
   Legend,
 } from "chart.js";
 import "tailwindcss/tailwind.css";
-import zoomPlugin, { resetZoom } from "chartjs-plugin-zoom";
+import zoomPlugin from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
 
 ChartJS.register(
@@ -119,8 +119,8 @@ function App() {
   const [fixedMin, setFixedMin] = useState<number>();
   const [fixedMax, setFixedMax] = useState<number>();
 
-  const [globalMin, setGlobalMin] = useState<number>(0);
-  const [globalMax, setGlobalMax] = useState<number>(Infinity);
+  // const [globalMin, setGlobalMin] = useState<number>(0);
+  // const [globalMax, setGlobalMax] = useState<number>(Infinity);
 
   const [isZoomX, setIsZoomX] = useState<boolean>(true);
   const [isZoomY, setIsZoomY] = useState<boolean>(true);
@@ -224,9 +224,9 @@ function App() {
           setLoading(false);
 
           const initialTimestamp = allData[0][header[0]] as number;
-          setGlobalMin(0);
+          // setGlobalMin(0);
           const finalTimestamp = allData[allData.length - 1][header[0]] as number;
-          setGlobalMax(finalTimestamp - initialTimestamp);
+          // setGlobalMax(finalTimestamp - initialTimestamp);
           setVisibleMax(finalTimestamp - initialTimestamp);
           setSecondsElapsed(finalTimestamp - initialTimestamp);
           setSampleRate(totalLines / (finalTimestamp - initialTimestamp));
@@ -350,6 +350,10 @@ function App() {
             },
             pinch: {
               enabled: true,
+            },
+            drag:{
+              enabled: true,
+              modifierKey: "shift" as const,
             },
             mode: isZoomX && isZoomY ? "xy" : isZoomX ? "x" : isZoomY ? "y" : (undefined as "x" | "y" | "xy" | undefined),
             onZoom: ({ chart }: any) => handleChange(chart),
