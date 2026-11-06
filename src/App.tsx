@@ -14,7 +14,6 @@ import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
 import TelemetryImport from "./TelemetryImport";
-import TelemetryGraph from "./TelemetryGraph";
 import TelemetryExport from "./TelemetryExport";
 
 ChartJS.register(
@@ -110,6 +109,9 @@ function App() {
 
   const [fixedMin, setFixedMin] = useState<number>();
   const [fixedMax, setFixedMax] = useState<number>();
+
+  const [isZoomX, setIsZoomX] = useState<boolean>(true);
+  const [isZoomY, setIsZoomY] = useState<boolean>(true);
 
   // const [globalMin, setGlobalMin] = useState<number>(0);
   // const [globalMax, setGlobalMax] = useState<number>(Infinity);
@@ -341,7 +343,7 @@ function App() {
         zoom: {
           zoom: {
             wheel: {
-              enabled: false, // Handled by TelemetryGraph
+              enabled: true,
             },
             pinch: {
               enabled: true,
@@ -350,7 +352,7 @@ function App() {
               enabled: true,
               modifierKey: "shift" as const,
             },
-            mode: "xy" as const,
+            mode: isZoomX && isZoomY ? "xy" : isZoomX ? "x" : isZoomY ? "y" : (undefined as "x" | "y" | "xy" | undefined),
             onZoom: ({ chart }: any) => handleChange(chart),
           },
           pan: {
@@ -398,7 +400,7 @@ function App() {
       },
     };
 
-    return <TelemetryGraph data={chartData} options={options} onViewportChange={handleChange} />;
+    return <Line data={chartData} options={options} />;
   };
 
   const renderVariableCheckboxes = () => {
@@ -462,7 +464,16 @@ function App() {
                 <h1>Enlarged points contain messages</h1>
               </div>
               <p>Currently sampling one out of every {Math.floor(calculatedSizeValue(visibleRange, maxResolution, minResolution))} points</p>
-              <p className="text-center text-sm opacity-75 mb-2">Scroll: XY zoom · Shift + scroll: X only · Ctrl + scroll: Y only</p>
+              <div className="flex justify-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <h1>X Zoom</h1>
+                  <input type="checkbox" className="toggle toggle-success" checked={isZoomX} onChange={(e) => setIsZoomX(e.target.checked)} />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <h1>Y Zoom</h1>
+                  <input type="checkbox" className="toggle toggle-success" checked={isZoomY} onChange={(e) => setIsZoomY(e.target.checked)} />
+                </div>
+              </div>
               {renderGraph()}
             </div>
           </div>
