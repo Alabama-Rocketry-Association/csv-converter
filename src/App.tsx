@@ -1,6 +1,5 @@
 import { useState, useEffect} from "react";
 import { Line } from "react-chartjs-2";
-import Papa from "papaparse";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,6 +13,7 @@ import {
 import "tailwindcss/tailwind.css";
 import zoomPlugin from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
+import TelemetryImport from "./TelemetryImport";
 
 ChartJS.register(
   CategoryScale,
@@ -33,7 +33,6 @@ interface DataPoint {
 interface CSVFile {
   name: string;
   url: string;
-  content: any[];
   path: string;      // full relative path in the repo
   folder: string;    // derived folder name (optional)
 }
@@ -56,14 +55,6 @@ export const fetchCSVFiles = async (): Promise<CSVFile[]> => {
           results = results.concat(subfolderFiles);
         } else if (item.name.endsWith(".csv")) {
           try {
-            const fileRes = await fetch(item.download_url);
-            const text = await fileRes.text();
-
-            const parsed = Papa.parse(text, {
-              header: true,
-              skipEmptyLines: true,
-            });
-
           const fullFolderPath = item.path.includes("/")
             ? item.path.substring(0, item.path.lastIndexOf("/"))
             : "";
@@ -77,7 +68,6 @@ export const fetchCSVFiles = async (): Promise<CSVFile[]> => {
               url: item.download_url,
               path: item.path,
               folder,
-              content: parsed.data,
             });
           } catch (err) {
             console.error(`Failed to parse CSV ${item.name}:`, err);
@@ -221,6 +211,12 @@ function App() {
           setTimeout(processChunk, 0);
         } else {
           setData(allData);
+          setSelectedVariables(new Set());
+          setMinimum(0);
+          setMaximum(Infinity);
+          setFixedMin(undefined);
+          setFixedMax(undefined);
+          setVisibleMin(0);
           setLoading(false);
 
           const initialTimestamp = allData[0][header[0]] as number;
@@ -279,7 +275,7 @@ function App() {
         let sizeValue = calculatedSizeValue(visibleRange, maxResolution, minResolution);
         sizeValue = Math.floor(sizeValue);
         return sizeValue > 0
-          ? index % sizeValue === 0 || point["messages"] != null
+          ? index % sizeValue === 0 || Boolean(point["messages"])
           : true;
       });
 
@@ -315,7 +311,7 @@ function App() {
           label: key,
           data: filteredData.map((point, idx) => ({
             x: (point[dependentVariable] as number) - initialTimestamp,
-            y: point[key],
+            y: point[key] === '' || point[key] == null ? null : point[key],
             message: messages[idx]
           })),
           borderColor: `hsl(${(index * 360) / selectedVariables.size}, 100%, 50%)`,
@@ -440,18 +436,9 @@ function App() {
       <div className=" h-full w-full mx-auto p-6 flex flex-col md:flex-row">
 
         <div className="flex-1">
-          <h1 className="text-3xl font-semibold text-center mb-8">CSV to Graph Converter</h1>
+          <h1 className="text-3xl font-semibold text-center mb-8">ARA Telemetry Graph Converter</h1>
 
-          <div className="flex flex-col space-y-4 mb-6">
-            <input
-              type="file"
-              accept=".csv, .xlsx"
-              className="w-full py-2 px-4 border border-gray-300 rounded-lg text-lg cursor-pointer"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileUpload(file);
-              }} />
-          </div>
+          <TelemetryImport onPlot={handleFileUpload} />
 
           <div className="flex flex-col md:flex-row gap-6">
             <div className="flex-1">
