@@ -1,5 +1,5 @@
 /** Offline telemetry import for the ARA CSV dashboard.
- * Converts long-form GDS telemetry, legacy logs, and 13-byte vehicle records
+ * Converts long-form GDS telemetry, legacy logs, and 13-/14-byte vehicle records
  * into the existing wide CSV format. Nothing is uploaded to a server.
  */
 
@@ -14,7 +14,6 @@ export interface ImportResult {
   warning?: string;
 }
 
-const RECORD_BYTES = 13; // little-endian <dBf: f64 epoch, u8 ASCII channel, f32 value
 const MAX_ROWS = 400_000;
 const MAX_CHANNELS = 512;
 // Onboard logs use Unix epoch seconds. Reject uninitialized timestamps (0),
@@ -30,23 +29,46 @@ const finite = (v: number) => Number.isFinite(v);
 const trimmed = (s: string) => s.trim().replace(/^['"]|['"]$/g, '');
 const escaped = (s: string) => /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 
-/** Parse the companion char,name map written by the binary logger. */
-export async function readChannelMap(file: File): Promise<Map<number, string>> {
+/** ARA binary log revisions:
+ *  char,name           -> <dBf  (13 bytes: f64 timestamp, u8 ASCII ID, f32 value)
+ *  channel_id_hex,name -> <dHf  (14 bytes: f64 timestamp, u16 numeric ID, f32 value)
+ *  The map header selects the record layout. Never guess based on file size.
+ */
+type BinaryMap = { names: Map<number, string>; idBytes: 1 | 2; recordBytes: 13 | 14 };
+
+async function parseChannelMap(file: File): Promise<BinaryMap> {
   const lines = (await file.text()).replace(/^\uFEFF/, '').split(/\r?\n/);
+  const header = lines.shift()?.trim().toLowerCase().replace(/\s/g, '');
+  const idBytes: 1 | 2 = header === 'char,name' ? 1 : 2;
+  if (header !== 'char,name' && header !== 'channel_id_hex,name') {
+    throw new Error('Unknown channel map header. Expected char,name or channel_id_hex,name.');
+  }
   const names = new Map<number, string>();
-  if (lines[0]?.trim().toLowerCase() !== 'char,name') throw new Error('Channel map must start with char,name');
-  for (const line of lines.slice(1)) {
+  for (const line of lines) {
     if (!line.trim()) continue;
     const comma = line.indexOf(',');
-    if (comma === -1) throw new Error(`Invalid channel-map line: ${line}`);
-    const code = trimmed(line.slice(0, comma));
+    if (comma < 0) throw new Error(`Invalid channel-map row: ${line}`);
+    const key = trimmed(line.slice(0, comma));
     const name = trimmed(line.slice(comma + 1));
-    if (code.length !== 1 || !name) throw new Error(`Invalid channel-map line: ${line}`);
-    if (names.has(code.charCodeAt(0))) throw new Error(`Duplicate channel code ${code}`);
-    names.set(code.charCodeAt(0), name);
+    if (!name) throw new Error(`Empty name in channel-map row: ${line}`);
+    let code: number;
+    if (idBytes === 1) {
+      if (key.length !== 1) throw new Error(`Expected single-character channel ID: ${line}`);
+      code = key.charCodeAt(0);
+    } else {
+      if (!/^0x[0-9a-f]{1,4}$/i.test(key)) throw new Error(`Expected 0x0000-style channel ID: ${line}`);
+      code = parseInt(key, 16);
+    }
+    if (names.has(code)) throw new Error(`Duplicate channel ID ${key}`);
+    names.set(code, name);
   }
-  if (!names.size) throw new Error('The channel map is empty');
-  return names;
+  if (names.size === 0) throw new Error('The channel map is empty');
+  return { names, idBytes, recordBytes: idBytes === 1 ? 13 : 14 };
+}
+
+/** Public compatibility helper: retrieve channel names for either map revision. */
+export async function readChannelMap(file: File): Promise<Map<number, string>> {
+  return (await parseChannelMap(file)).names;
 }
 
 /** Streaming text reader, so the entire input log is not loaded as a string. */
@@ -115,11 +137,16 @@ export async function prepareTelemetry(
   const eventBins = new Map<number, string[]>();
   const channels = new Set<string>();
   let first = Infinity, last = -Infinity, measurements = 0, events = 0, rejected = 0;
-  let unknownCodes = 0, invalidTimestamps = 0;
+  let unknownCodes = 0, invalidTimestamps = 0, trailingBytes = 0;
+  const nonfiniteChannels = new Map<string, number>();
   const stampBin = (t: number) => Math.ceil((t * 1000) / stepMs);
   const remember = (time: number, name: string, value: number) => {
     if (!validEpoch(time)) { invalidTimestamps++; rejected++; return; }
-    if (!finite(value) || !name) { rejected++; return; }
+    if (!finite(value) || !name) {
+      rejected++;
+      if (name && !finite(value)) nonfiniteChannels.set(name, (nonfiniteChannels.get(name) || 0) + 1);
+      return;
+    }
     const idx = stampBin(time);
     let bucket = bins.get(idx);
     if (!bucket) { bucket = new Map(); bins.set(idx, bucket); }
@@ -140,20 +167,21 @@ export async function prepareTelemetry(
 
   if (ext === 'bin') {
     if (!channelMap) throw new Error('Choose the matching *_channels.csv file to decode this .bin log.');
-    const map = await readChannelMap(channelMap);
-    const count = Math.floor(file.size / RECORD_BYTES);
-    if (count === 0) throw new Error('Binary file has no complete 13-byte records');
-    if (file.size % RECORD_BYTES !== 0) rejected++;
+    const { names: map, idBytes, recordBytes } = await parseChannelMap(channelMap);
+    const count = Math.floor(file.size / recordBytes);
+    if (count === 0) throw new Error(`Binary file has no complete ${recordBytes}-byte records`);
+    trailingBytes = file.size % recordBytes;
+    if (trailingBytes) rejected++; // A partial final record is common after an interrupted write.
     const chunkRecords = 131_072;
     for (let start = 0; start < count; start += chunkRecords) {
       const end = Math.min(start + chunkRecords, count);
-      const buf = await file.slice(start * RECORD_BYTES, end * RECORD_BYTES).arrayBuffer();
+      const buf = await file.slice(start * recordBytes, end * recordBytes).arrayBuffer();
       const data = new DataView(buf);
       for (let i = 0; i < end - start; i++) {
-        const offset = i * RECORD_BYTES;
+        const offset = i * recordBytes;
         const t = data.getFloat64(offset, true);
-        const code = data.getUint8(offset + 8);
-        const value = data.getFloat32(offset + 9, true);
+        const code = idBytes === 1 ? data.getUint8(offset + 8) : data.getUint16(offset + 8, true);
+        const value = data.getFloat32(offset + 8 + idBytes, true);
         const name = map.get(code);
         if (!name) { unknownCodes++; rejected++; continue; }
         remember(t, name, value);
@@ -245,6 +273,8 @@ export async function prepareTelemetry(
     warning: [
       invalidTimestamps ? `Skipped ${invalidTimestamps.toLocaleString()} invalid/uninitialized timestamps.` : '',
       unknownCodes ? `Skipped ${unknownCodes.toLocaleString()} records with unmapped channel IDs.` : '',
+      trailingBytes ? `Ignored ${trailingBytes} trailing byte(s) from an incomplete final binary record.` : '',
+      nonfiniteChannels.size ? `Skipped non-finite measurements: ${[...nonfiniteChannels].map(([name, count]) => `${name} (${count.toLocaleString()})`).join(', ')}.` : '', 
     ].filter(Boolean).join(' ') || undefined,
   };
 }
