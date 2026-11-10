@@ -13,7 +13,10 @@ export default function Navbar({ data = [], loading = false, busy = false, onSel
 
   return (
     <header className="flex h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
-      <span className="truncate text-sm font-semibold">ARA CSV converter</span>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <img src={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}ARA.jpeg`} alt="" className="size-8 shrink-0 rounded-sm object-contain" />
+        <span className="truncate text-sm font-semibold">ARA CSV converter</span>
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" disabled={busy}>Sample files</Button>

@@ -1,8 +1,9 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { useState, useEffect, useRef} from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Line } from "react-chartjs-2";
+import Papa from "papaparse";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,7 +13,9 @@ import {
   Title,
   Tooltip,
   Legend,
+  Interaction,
   type Chart,
+  type InteractionModeFunction,
   type TooltipItem,
 } from "chart.js";
 
@@ -41,6 +44,34 @@ interface DataPoint {
 
 type TelemetryChartPoint = { x: number; y: number | null; message: string | number | null };
 type TelemetryChart = ChartJS<"line", TelemetryChartPoint[], unknown>;
+
+declare module "chart.js" {
+  interface InteractionModeMap { eventIndex: InteractionModeFunction }
+}
+
+// Prefer an event marker under the pointer, while retaining the shared X-axis tooltip.
+Interaction.modes.eventIndex = (chart, event, options, useFinalPosition) => {
+  if (event.x == null || event.y == null) return Interaction.modes.index(chart, event, options, useFinalPosition);
+  const position = { x: event.x, y: event.y };
+  const eventPoints = Interaction.modes.point(chart, event, { ...options, axis: "xy", intersect: true }, useFinalPosition)
+    .filter(item => {
+      const raw = chart.data.datasets[item.datasetIndex].data[item.index];
+      return raw != null && typeof raw === "object" && "message" in raw && !!raw.message;
+    });
+  if (eventPoints.length === 0) return Interaction.modes.index(chart, event, options, useFinalPosition);
+  eventPoints.sort((a, b) => {
+    const distance = (item: typeof a) => {
+      const center = (item.element as PointElement).getCenterPoint(useFinalPosition);
+      return (center.x - position.x) ** 2 + (center.y - position.y) ** 2;
+    };
+    return distance(a) - distance(b);
+  });
+  const { index } = eventPoints[0];
+  return chart.getSortedVisibleDatasetMetas().flatMap(meta => {
+    const element = meta.data[index] as PointElement | undefined;
+    return element && !element.skip ? [{ element, datasetIndex: meta.index, index }] : [];
+  });
+};
 
 // Evenly spread hues, softer than full-saturation neon, readable in light and dark.
 const channelColor = (index: number, dark: boolean) =>
@@ -205,8 +236,10 @@ function App() {
       const lines = text.split("\n").map((line) => line.trim()).filter(line => line !== "");
 
       if (lines.length < 2) throw new Error("The file has no data rows.");
-      const header = lines[0].replace(/^\uFEFF/, "").split(",");
+      const parseRow = (line: string) => line.includes('"') ? Papa.parse<string[]>(line).data[0] : line.split(",");
+      const header = parseRow(lines[0].replace(/^\uFEFF/, ""));
       if (header.length < 2 || !header[0]) throw new Error("The file needs a time column and at least one channel.");
+      const messageIndex = header.indexOf("messages");
       const chunkSize = 5000;
       const totalLines = lines.length;
       let currentLine = 1;
@@ -217,12 +250,20 @@ function App() {
         currentLine += chunkSize;
 
         chunk.forEach((row) => {
-          const values = row.split(",");
+          const values = parseRow(row);
           const rowData: DataPoint = {};
           header.forEach((key, index) => {
-            const value = values[index];
-            rowData[key] = isNaN(parseFloat(value)) ? value : parseFloat(value);
+            if (index === messageIndex || (messageIndex >= 0 && index > messageIndex && key === "_")) return;
+            const value = values[index] ?? "";
+            const numeric = value.trim() === "" ? NaN : Number(value);
+            rowData[key] = Number.isFinite(numeric) ? numeric : value;
           });
+          if (messageIndex >= 0) {
+            // Older exports put additional events in unnamed columns after `messages`.
+            rowData.messages = values.filter((_, index) =>
+              index === messageIndex || (index > messageIndex && (index >= header.length || header[index] === "_"))
+            ).map(value => value.trim()).filter(Boolean).join(", ");
+          }
           allData.push(rowData);
         });
 
@@ -231,17 +272,23 @@ function App() {
         if (currentLine < totalLines) {
           setTimeout(processChunk, 0);
         } else {
-          const firstTime = allData[0]?.[header[0]];
-          const lastTime = allData[allData.length - 1]?.[header[0]];
+          // Binary search in the graph requires valid, ordered timestamps.
+          const timeKey = header[0];
+          const orderedData = allData.filter(row => typeof row[timeKey] === "number" && Number.isFinite(row[timeKey]));
+          if (orderedData.some((row, index) => index > 0 && (row[timeKey] as number) < (orderedData[index - 1][timeKey] as number))) {
+            orderedData.sort((a, b) => (a[timeKey] as number) - (b[timeKey] as number));
+          }
+          const firstTime = orderedData[0]?.[header[0]];
+          const lastTime = orderedData[orderedData.length - 1]?.[header[0]];
           if (typeof firstTime !== "number" || !Number.isFinite(firstTime) ||
               typeof lastTime !== "number" || !Number.isFinite(lastTime)) {
             setLoadError("The first column must contain numeric timestamps.");
             setLoading(false);
             return;
           }
-          const firstChannel = header.slice(1).find(key => key !== "messages" && allData.some(row => typeof row[key] === "number" && Number.isFinite(row[key])));
+          const firstChannel = header.slice(1).find(key => key !== "messages" && key !== "_" && orderedData.some(row => typeof row[key] === "number" && Number.isFinite(row[key])));
           setDependentVariable(header[0]);
-          setData(allData);
+          setData(orderedData);
           setDataRevision(value => value + 1);
           const filename = typeof input === "string" ? decodeURIComponent(input.split("/").pop() || "Sample file") : input.name;
           setLoadedName(name || filename);
@@ -253,9 +300,9 @@ function App() {
           setVisibleMin(0);
           setLoading(false);
 
-          const initialTimestamp = allData[0][header[0]] as number;
+          const initialTimestamp = firstTime;
           // setGlobalMin(0);
-          const finalTimestamp = allData[allData.length - 1][header[0]] as number;
+          const finalTimestamp = lastTime;
           // setGlobalMax(finalTimestamp - initialTimestamp);
           const duration = finalTimestamp - initialTimestamp;
           setVisibleMax(duration > 0 ? duration : 1);
@@ -314,34 +361,32 @@ function App() {
     });
   };
 
-  const renderGraph = () => {
-    if (!data) return <p className="py-16 text-center text-muted-foreground">No data to display</p>;
+  const filteredData = useMemo(() => {
+    if (!data || !dependentVariable || selectedVariables.size === 0) return [];
+    const initialTimestamp = data[0][dependentVariable] as number;
+    const startTime = minimum + initialTimestamp;
+    const endTime = maximum + initialTimestamp;
+    const bound = (target: number, afterEqual = false) => {
+      let low = 0;
+      let high = data.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        const time = data[middle][dependentVariable] as number;
+        if (time < target || (afterEqual && time === target)) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    };
+    // Timestamps are ordered, so locate the visible window without scanning the full file.
+    const startIndex = Math.max(0, bound(startTime) - 1);
+    const endIndex = Number.isFinite(endTime) ? Math.min(data.length, bound(endTime, true) + 1) : data.length;
+    const inRange = data.slice(startIndex, endIndex);
 
-    if (selectedVariables.size === 0) return <p className="py-16 text-center text-muted-foreground">Select a channel to plot.</p>;
-
-    const theme = chartTheme(isDark);
-
-    if (!Object.prototype.hasOwnProperty.call(data[0], dependentVariable)) {
-      return (
-        <div role="alert" className="mx-auto mt-4 max-w-xl rounded-md border border-destructive p-3 text-destructive">
-          <span><strong className="font-semibold">Error:</strong> No dependent variable field found in the data</span>
-        </div>
-      );
-    }
-
-    const initialTimestamp = (data[0][dependentVariable] as number);
-
-
-    const adjustedMinimum = minimum + initialTimestamp;
-    const adjustedMaximum = maximum + initialTimestamp;
-
-    const inRange = data.filter((point) => {
-      const timestamp = point[dependentVariable] as number;
-      return timestamp >= adjustedMinimum && timestamp <= adjustedMaximum;
-    });
-
-    // Keep extrema and events in each bucket so short spikes survive downsampling.
-    const bucketSize = Math.max(1, Math.ceil(inRange.length / 1000));
+    // Sample to the chart's pixel width: zoomed-out views stay light, while zooming in reveals detail.
+    const plotWidth = chartRef.current?.chartArea.width ?? Math.min(window.innerWidth * 0.65, 1000);
+    const bucketCount = Math.max(1, Math.floor(plotWidth / 2));
+    const bucketSize = Math.max(1, Math.ceil(inRange.length / bucketCount));
+    // Keep extrema, validity transitions, and events so spikes and event markers survive sampling.
     const filteredData: DataPoint[] = [];
     for (let start = 0; start < inRange.length; start += bucketSize) {
       const end = Math.min(start + bucketSize, inRange.length);
@@ -366,6 +411,26 @@ function App() {
       for (let i = start; i < end; i++) if (inRange[i].messages) keep.add(i);
       [...keep].sort((a, b) => a - b).forEach(index => filteredData.push(inRange[index]));
     }
+
+    return filteredData;
+  }, [data, dependentVariable, minimum, maximum, selectedVariables]);
+
+  const renderGraph = () => {
+    if (!data) return <p className="py-16 text-center text-muted-foreground">No data to display</p>;
+
+    if (selectedVariables.size === 0) return <p className="py-16 text-center text-muted-foreground">Select a channel to plot.</p>;
+
+    const theme = chartTheme(isDark);
+
+    if (!Object.prototype.hasOwnProperty.call(data[0], dependentVariable)) {
+      return (
+        <div role="alert" className="mx-auto mt-4 max-w-xl rounded-md border border-destructive p-3 text-destructive">
+          <span><strong className="font-semibold">Error:</strong> No dependent variable field found in the data</span>
+        </div>
+      );
+    }
+
+    const initialTimestamp = (data[0][dependentVariable] as number);
 
       if (filteredData.length === 0) {
         return (
@@ -412,7 +477,8 @@ function App() {
           pointBorderColor: color,
           pointBorderWidth: 2,
           pointRadius: filteredData.map((point) => (point["messages"] ? 6 : filteredData.length === 1 ? 3 : 0)),
-          pointHoverRadius: 7,
+          pointHoverRadius: 8,
+          pointHitRadius: 10,
         };
       });
 
@@ -425,7 +491,7 @@ function App() {
       responsive: true,
       animation: false as const,
       color: theme.text,
-      interaction: { mode: 'index' as const, intersect: false, axis: 'x' as const },
+      interaction: { mode: 'eventIndex' as const, intersect: false, axis: 'x' as const },
       plugins: {
         legend: {
           position: "top" as const,
@@ -456,7 +522,7 @@ function App() {
           },
         },
         tooltip: {
-          mode: 'index' as const,
+          mode: 'eventIndex' as const,
           intersect: false as const,
           axis: 'x' as const,
           filter: (item: TooltipItem<"line">) => {
@@ -468,13 +534,19 @@ function App() {
           backgroundColor: isDark ? "#e4e7ec" : "#1d222c",
           titleColor: isDark ? "#151920" : "#ffffff",
           bodyColor: isDark ? "#151920" : "#ffffff",
+          footerColor: isDark ? "#151920" : "#ffffff",
           padding: 10,
           cornerRadius: 6,
           callbacks: {
             label: function (tooltipItem: TooltipItem<"line">) {
               const point = tooltipItem.raw as { y: number | null; message?: string | number | null };
-              const message = point.message ? `Message: ${point.message}` : "";
-              return `${tooltipItem.dataset.label}: ${point.y}${message ? `\n${message}` : ""}`;
+              return `${tooltipItem.dataset.label}: ${point.y}`;
+            },
+            footer: function (items: TooltipItem<"line">[]) {
+              const point = items.find(item => item.raw && typeof item.raw === "object" && "message" in item.raw)?.raw as TelemetryChartPoint | undefined;
+              return point?.message
+                ? (`Event: ${point.message}`.match(/.{1,36}(?:\s|$)|\S{1,36}/g) ?? []).map(line => line.trim())
+                : [];
             },
           },
         },
