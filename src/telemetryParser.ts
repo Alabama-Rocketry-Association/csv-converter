@@ -72,7 +72,7 @@ export async function readChannelMap(file: File): Promise<Map<number, string>> {
 }
 
 /** Streaming text reader, so the entire input log is not loaded as a string. */
-async function scanLines(file: File, useLine: (line: string) => void, progress?: ImportProgress) {
+async function scanLines(file: File, onLine: (line: string) => void, progress?: ImportProgress) {
   const reader = file.stream().getReader();
   const decoder = new TextDecoder('utf-8');
   let pending = '', bytesRead = 0;
@@ -84,13 +84,13 @@ async function scanLines(file: File, useLine: (line: string) => void, progress?:
       pending += decoder.decode(value, { stream: true });
       let pos: number;
       while ((pos = pending.indexOf('\n')) !== -1) {
-        useLine(pending.slice(0, pos).replace(/\r$/, ''));
+        onLine(pending.slice(0, pos).replace(/\r$/, ''));
         pending = pending.slice(pos + 1);
       }
       progress?.(bytesRead / Math.max(file.size, 1));
     }
     pending += decoder.decode();
-    if (pending) useLine(pending);
+    if (pending) onLine(pending);
   } finally { reader.releaseLock(); }
 }
 
@@ -236,8 +236,8 @@ export async function prepareTelemetry(
   }
 
   if (!measurements) throw new Error(
-    `No valid numeric telemetry found. Skipped ${invalidTimestamps} invalid timestamps ` +
-    `and ${unknownCodes} unknown channel codes. Confirm that the binary file and channel map match.`
+    `No valid numeric telemetry found.${invalidTimestamps ? ` Skipped ${invalidTimestamps} invalid timestamps; timestamps must be Unix seconds from 2000 through 2099.` : ''}` +
+    (ext === 'bin' ? ` Skipped ${unknownCodes} unmapped channel codes. Check the binary file and channel map.` : '')
   );
   const rowCount = last - first + 1;
   if (rowCount > MAX_ROWS) {

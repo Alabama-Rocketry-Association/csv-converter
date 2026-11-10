@@ -1,10 +1,13 @@
-﻿import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useEffect, useRef, useState } from 'react';
 import { prepareTelemetry, type ImportResult } from './telemetryParser';
 
-interface Props { onPlot: (file: File) => void; }
+interface Props { onPlot: (file: File, name: string) => void; sampleRevision: number; loading: boolean; onBusyChange: (busy: boolean) => void; }
 
-export default function TelemetryImport({ onPlot }: Props) {
+export default function TelemetryImport({ onPlot, sampleRevision, loading, onBusyChange }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [map, setMap] = useState<File | null>(null);
   const [interval, setInterval] = useState(50);
   const [maxAge, setMaxAge] = useState(200);
@@ -15,6 +18,13 @@ export default function TelemetryImport({ onPlot }: Props) {
   const [downloadUrl, setDownloadUrl] = useState('');
 
   useEffect(() => {
+    setFile(null);
+    setResult(null);
+    setError('');
+    if (fileInput.current) fileInput.current.value = '';
+  }, [sampleRevision]);
+
+  useEffect(() => {
     if (!result?.converted) { setDownloadUrl(''); return; }
     const url = URL.createObjectURL(result.file);
     setDownloadUrl(url);
@@ -23,48 +33,47 @@ export default function TelemetryImport({ onPlot }: Props) {
 
   async function convert() {
     if (!file) return;
-    setBusy(true); setProgress(0); setResult(null); setError('');
+    setBusy(true); onBusyChange(true); setProgress(0); setResult(null); setError('');
     try {
       const output = await prepareTelemetry(file, map, interval, maxAge, setProgress);
       setResult(output);
-      onPlot(output.file);
+      onPlot(output.file, file.name);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); onBusyChange(false); }
   }
 
   return (
-    <section className="rounded-xl border border-base-300 p-4 mb-6 space-y-3">
-      <h2 className="font-semibold text-xl">Import telemetry</h2>
-      <p className="text-sm opacity-75">Open a wide CSV, a long-form CSV, a GDS .log, or an onboard .bin file. Conversion runs locally in your browser.</p>
-      <div className="flex flex-col lg:flex-row gap-3">
-        <label className="flex-1 text-sm">Telemetry file
-          <input className="file-input file-input-bordered w-full" type="file" accept=".csv,.log,.txt,.bin" onChange={e => {
+    <section className="space-y-4">
+      <h2 className="text-sm font-semibold">Import telemetry</h2>
+      <div className="space-y-4">
+        <label className="block text-sm font-medium">Telemetry file
+          <Input ref={fileInput} className="mt-1.5 h-9 w-full min-w-0 cursor-pointer text-xs font-normal file:mr-2 file:h-full file:cursor-pointer" type="file" accept=".csv,.log,.txt,.bin" onChange={e => {
             const picked = e.target.files?.[0] || null;
             setFile(picked); setResult(null); setError('');
           }} />
         </label>
-        <label className="flex-1 text-sm">Channel map (required for .bin)
-          <input className="file-input file-input-bordered w-full" type="file" accept=".csv" onChange={e => {
+        <label className="block text-sm font-medium">Channel map (required for .bin)
+          <Input className="mt-1.5 h-9 w-full min-w-0 cursor-pointer text-xs font-normal file:mr-2 file:h-full file:cursor-pointer" type="file" accept=".csv" onChange={e => {
             setMap(e.target.files?.[0] || null); setResult(null);
           }} />
         </label>
       </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">Output interval (ms)
-          <input className="input input-bordered w-32 block" type="number" min={1} max={60000} step={1} value={interval} onChange={e => setInterval(Number(e.target.value))} />
+      <div className="grid grid-cols-2 items-end gap-3">
+        <label className="text-xs font-medium">Output interval (ms)
+          <Input className="mt-1.5 block w-full font-normal" type="number" min={1} max={60000} step={1} value={interval} onChange={e => setInterval(Number(e.target.value))} />
         </label>
-        <label className="text-sm">Max sample age (ms)
-          <input className="input input-bordered w-32 block" type="number" min={0} max={600000} step={1} value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} />
+        <label className="text-xs font-medium">Max sample age (ms)
+          <Input className="mt-1.5 block w-full font-normal" type="number" min={0} max={600000} step={1} value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} />
         </label>
-        <button type="button" disabled={!file || busy} className="btn btn-primary" onClick={convert}>
-          {busy ? `Processing ${Math.round(progress * 100)}%` : 'Load and plot'}
-        </button>
-        {downloadUrl && <a className="btn btn-outline" href={downloadUrl} download={result?.file.name}>Download wide CSV</a>}
       </div>
-      {error && <p role="alert" className="text-error text-sm">{error}</p>}
-      {result?.converted && <p className="text-sm">Converted {result.measurements.toLocaleString()} measurements across {result.channels} channels; {result.events} events, {result.rejected} rejected records. {result.warning || ''}</p>}
-      {result && !result.converted && <p className="text-sm">Wide-format CSV loaded without conversion.</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button className="w-full" type="button" disabled={!file || busy || loading} onClick={convert}>
+          {busy ? <>Processing <span className="tabular">{Math.round(progress * 100)}%</span></> : 'Load and plot'}
+        </Button>
+        {downloadUrl && <Button className="w-full" asChild variant="outline"><a href={downloadUrl} download={result?.file.name}>Download wide CSV</a></Button>}
+      </div>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {result?.converted && <p className="tabular text-sm">Converted {result.measurements.toLocaleString()} measurements across {result.channels} channels; {result.events} events, {result.rejected} rejected records. {result.warning || ''}</p>}
     </section>
   );
 }
-

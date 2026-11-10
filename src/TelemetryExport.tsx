@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { createAnalysisCsv, createMatlabFile, matlabNames, numericValue, type TelemetryRow } from './matlabExport';
 
@@ -28,7 +30,7 @@ export default function TelemetryExport({ data, timeKey, selectedChannels, visib
   if (!data?.length || !timeKey) return null;
 
   const channels = Object.keys(data[0]).filter(k => k !== timeKey && k !== 'messages');
-  const exportChannels = selectedChannels.size ? channels.filter(k => selectedChannels.has(k)) : channels;
+  const exportChannels = channels.filter(k => selectedChannels.has(k));
 
   async function exportAs(format: 'mat' | 'csv') {
     if (!data) return;
@@ -59,22 +61,24 @@ export default function TelemetryExport({ data, timeKey, selectedChannels, visib
   }
 
   return (
-    <section className="rounded-xl border border-base-300 p-4 mb-5 space-y-2">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="font-semibold text-lg mr-2">Export for analysis</h2>
-        <label className="text-sm">Time range
-          <select className="select select-bordered select-sm ml-2" value={scope} onChange={e => setScope(e.target.value as 'all' | 'visible')}>
-            <option value="all">Entire recording</option>
-            <option value="visible">Current zoom window</option>
-          </select>
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="sr-only">Export for analysis</h2>
+        <label className="text-sm font-medium"><span className="sr-only">Time range</span>
+          <span className="relative block">
+            <select className="h-8 cursor-pointer appearance-none rounded-md border border-input bg-background py-1 pl-3 pr-9 text-xs font-normal focus-visible:ring-1 focus-visible:ring-ring" value={scope} onChange={e => setScope(e.target.value as 'all' | 'visible')}>
+              <option value="all">Entire recording</option>
+              <option value="visible">Current zoom window</option>
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          </span>
         </label>
-        <button type="button" className="btn btn-sm btn-outline" disabled={busy || !exportChannels.length} onClick={() => void exportAs('mat')}>Export MATLAB .mat</button>
-        <button type="button" className="btn btn-sm btn-outline" disabled={busy || !exportChannels.length} onClick={() => void exportAs('csv')}>Export CSV</button>
+        <Button type="button" size="sm" variant="outline" disabled={busy || !exportChannels.length} onClick={() => void exportAs('mat')}>MATLAB .mat</Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy || !exportChannels.length} onClick={() => void exportAs('csv')}>CSV</Button>
       </div>
-      <p className="text-xs opacity-75">Exports {selectedChannels.size ? 'the checked channels' : 'all channels (none checked)'} at the full imported resolution; chart display decimation is not applied. MATLAB export includes time_s (relative), timestamp_s (original) and one numeric variable per channel.</p>
       {busy && <p className="text-sm">Preparing export…</p>}
-      {error && <p className="text-sm text-error" role="alert">{error}</p>}
-      {notice && <p className="text-sm opacity-80">{notice}</p>}
+      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+      {notice && <p className="tabular text-sm text-muted-foreground">{notice}</p>}
     </section>
   );
 }
