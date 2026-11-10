@@ -1,28 +1,37 @@
-:root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #ca2725;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 220 14% 96%; --foreground: 220 21% 13%;
+    --card: 0 0% 100%; --card-foreground: 220 21% 13%;
+    --popover: 0 0% 100%; --popover-foreground: 220 21% 13%;
+    --primary: 240 5.9% 10%; --primary-foreground: 0 0% 98%;
+    --secondary: 220 14% 93%; --secondary-foreground: 220 21% 13%;
+    --muted: 220 14% 93%; --muted-foreground: 220 10% 38%;
+    --accent: 220 14% 93%; --accent-foreground: 220 21% 13%;
+    --destructive: 4 76% 41%; --destructive-foreground: 0 0% 100%;
+    --border: 220 17% 85%; --input: 220 13% 75%; --ring: 240 5% 30%; --radius: 0.5rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --background: 220 21% 9%; --foreground: 220 17% 90%;
+      --card: 220 19% 12%; --card-foreground: 220 17% 90%;
+      --popover: 220 19% 12%; --popover-foreground: 220 17% 90%;
+      --primary: 0 0% 98%; --primary-foreground: 240 5.9% 10%;
+      --secondary: 220 16% 20%; --secondary-foreground: 220 17% 90%;
+      --muted: 220 16% 20%; --muted-foreground: 220 12% 73%;
+      --accent: 220 16% 20%; --accent-foreground: 220 17% 90%;
+      --destructive: 5 83% 70%; --destructive-foreground: 0 0% 10%;
+      --border: 220 16% 22%; --input: 220 14% 33%; --ring: 240 5% 70%;
+    }
+  }
+  * { @apply border-border; }
+  body { @apply m-0 min-w-[320px] bg-background text-foreground; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+  ::selection { background: hsl(var(--primary) / 0.25); }
+  input[type='number'], .tabular { font-variant-numeric: tabular-nums; }
 }

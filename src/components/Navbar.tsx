@@ -1,81 +1,35 @@
-import ARA from '/ARA.jpeg';
-import React, { useState } from 'react';
+import { Fragment } from 'react';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-const Navbar: React.FC<any> = (props) => {
-  const { data = [], onSelect } = props;
-  const folders = data.reduce((acc: Record<string, any[]>, item: any) => {
-    if (!acc[item.folder]) acc[item.folder] = [];
-    acc[item.folder].push(item);
-    return acc;
+interface CSVFile { folder: string; name: string; url: string; }
+interface Props { data?: CSVFile[]; loading?: boolean; busy?: boolean; onSelect?: (url: string) => void; }
+
+export default function Navbar({ data = [], loading = false, busy = false, onSelect }: Props) {
+  const folders = data.reduce<Record<string, CSVFile[]>>((groups, file) => {
+    (groups[file.folder] ??= []).push(file);
+    return groups;
   }, {});
 
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
-
-  const toggleFolder = (folder: string) => {
-    setOpenFolders((prev) => ({
-      ...prev,
-      [folder]: !prev[folder],
-    }));
-  };
   return (
-    <div className="navbar bg-base-100">
-      <div className="flex-1">
-        <a href="https://www.alabamarocketry.org/" className="btn btn-ghost text-xl">Alabama Rocketry Association</a>
-      </div>
-      <div className="flex-none gap-2">
-        <div className="dropdown dropdown-end">
-          <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
-            <div className="w-10 rounded-full">
-              <img
-                alt="image"
-                src={ARA} />
-            </div>
-          </div>
-
-          <ul
-            tabIndex={0}
-            className="menu menu-sm dropdown-content rounded-box z-[1] mt-3 w-52 p-2 shadow bg-blue-500">
-            <h1 className="text-center font-bold text-black">CSVs in Repo</h1>
-            {data.length === 0 && (
-              <li>
-                <a className="text-black">CSVs Loading...</a>
-              </li>
-            )}
- <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
-      {Object.keys(folders).map((folder, index) => (
-        <li key={index}>
-          <button
-            onClick={() => toggleFolder(folder)}
-            style={{
-              cursor: 'pointer',
-              background: 'none',
-              border: 'none',
-              fontWeight: 'bold',
-              fontSize: '1rem',
-              marginBottom: '0.5rem',
-            }}
-          >
-            {openFolders[folder] ? '∨' : '∧'} {folder}
-          </button>
-          {openFolders[folder] && (
-            <ul style={{ paddingLeft: '20px' }}>
-              {folders[folder].map((file: { url: any; name: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; }, fileIndex: React.Key | null | undefined) => (
-                <li key={fileIndex} onClick={() => onSelect && onSelect(file.url)}>
-                  <a href="#" style={{ cursor: 'pointer', textDecoration: 'underline' }}>
-                    {file.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))}
-    </ul>
-          </ul>
-        </div>
-      </div>
-    </div>
+    <header className="flex h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
+      <span className="truncate text-sm font-semibold">ARA CSV converter</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" disabled={busy}>Sample files</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="max-h-[70vh] w-72 overflow-y-auto">
+          <DropdownMenuLabel>Sample files</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {data.length === 0 && <div className="px-2 py-2 text-sm text-muted-foreground">{loading ? "Loading..." : "No sample files available."}</div>}
+          {Object.entries(folders).map(([folder, files]) => (
+            <Fragment key={folder}>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">{folder}</DropdownMenuLabel>
+              {files.map(file => <DropdownMenuItem key={file.url} className="whitespace-normal break-all" onSelect={() => onSelect?.(file.url)}>{file.name}</DropdownMenuItem>)}
+            </Fragment>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </header>
   );
-};
-
-export default Navbar;
+}
