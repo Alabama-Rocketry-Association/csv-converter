@@ -17,8 +17,11 @@ export default function TelemetryImport({ onPlot, sampleRevision, loading, onBus
   const [result, setResult] = useState<ImportResult | null>(null);
   const [downloadUrl, setDownloadUrl] = useState('');
 
+  const isBinary = !!file?.name.toLowerCase().endsWith('.bin');
+
   useEffect(() => {
     setFile(null);
+    setMap(null);
     setResult(null);
     setError('');
     if (fileInput.current) fileInput.current.value = '';
@@ -50,13 +53,15 @@ export default function TelemetryImport({ onPlot, sampleRevision, loading, onBus
           <Input ref={fileInput} className="mt-1.5 h-9 w-full min-w-0 cursor-pointer text-xs font-normal file:mr-2 file:h-full file:cursor-pointer" type="file" accept=".csv,.log,.txt,.bin" onChange={e => {
             const picked = e.target.files?.[0] || null;
             setFile(picked); setResult(null); setError('');
+            if (!picked?.name.toLowerCase().endsWith('.bin')) setMap(null);
           }} />
         </label>
-        <label className="block text-sm font-medium">Channel map (required for .bin)
+        {isBinary && <label className="block text-sm font-medium">Channel map
+          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">The *_channels.csv saved with this log</span>
           <Input className="mt-1.5 h-9 w-full min-w-0 cursor-pointer text-xs font-normal file:mr-2 file:h-full file:cursor-pointer" type="file" accept=".csv" onChange={e => {
-            setMap(e.target.files?.[0] || null); setResult(null);
+            setMap(e.target.files?.[0] || null); setResult(null); setError('');
           }} />
-        </label>
+        </label>}
       </div>
       <div className="grid grid-cols-2 items-end gap-3">
         <label className="text-xs font-medium">Output interval (ms)
@@ -67,7 +72,7 @@ export default function TelemetryImport({ onPlot, sampleRevision, loading, onBus
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button className="w-full" type="button" disabled={!file || busy || loading} onClick={convert}>
+        <Button className="w-full" type="button" disabled={!file || (isBinary && !map) || busy || loading} onClick={convert}>
           {busy ? <>Processing <span className="tabular">{Math.round(progress * 100)}%</span></> : 'Load and plot'}
         </Button>
         {downloadUrl && <Button className="w-full" asChild variant="outline"><a href={downloadUrl} download={result?.file.name}>Download wide CSV</a></Button>}

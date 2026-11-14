@@ -23,6 +23,7 @@ import zoomPlugin from "chartjs-plugin-zoom";
 import Navbar from "./components/Navbar";
 import TelemetryImport from "./TelemetryImport";
 import TelemetryExport from "./TelemetryExport";
+import HelpPanel from "./components/HelpPanel";
 
 ChartJS.register(
   CategoryScale,
@@ -74,8 +75,29 @@ Interaction.modes.eventIndex = (chart, event, options, useFinalPosition) => {
 };
 
 // Evenly spread hues, softer than full-saturation neon, readable in light and dark.
-const channelColor = (index: number, dark: boolean) =>
-  `hsl(${Math.round((index * 137.508) % 360)}, ${dark ? 70 : 62}%, ${dark ? 64 : 42}%)`;
+const channelHsl = (index: number, dark: boolean) =>
+  [Math.round((index * 137.508) % 360), dark ? 70 : 62, dark ? 64 : 42] as const;
+
+const channelColor = (index: number, dark: boolean) => {
+  const [h, s, l] = channelHsl(index, dark);
+  return `hsl(${h}, ${s}%, ${l}%)`;
+};
+
+// Black or white, whichever contrasts more with the channel color (WCAG relative luminance).
+const channelForeground = (index: number, dark: boolean) => {
+  const [h, s, l] = channelHsl(index, dark);
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+  const channel = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(8) + 0.0722 * channel(4);
+  return (luminance + 0.05) / 0.05 > 1.05 / (luminance + 0.05) ? "#000" : "#fff";
+};
+
+// Upper bound on plotted points (rows × channels) so many-channel views stay responsive.
+const POINT_BUDGET = 200_000;
 
 const chartTheme = (dark: boolean) => ({
   text: dark ? "#a4abb8" : "#4a5160",
@@ -165,6 +187,8 @@ function App() {
 
   const [fixedMin, setFixedMin] = useState<number>();
   const [fixedMax, setFixedMax] = useState<number>();
+
+  const [helpOpen, setHelpOpen] = useState(true);
 
   const [isZoomX, setIsZoomX] = useState<boolean>(true);
   const [isZoomY, setIsZoomY] = useState<boolean>(true);
@@ -299,6 +323,7 @@ function App() {
           setFixedMax(undefined);
           setVisibleMin(0);
           setLoading(false);
+          setHelpOpen(false);
 
           const initialTimestamp = firstTime;
           // setGlobalMin(0);
@@ -317,6 +342,13 @@ function App() {
     }
   };
 
+
+  const toggleHelp = () => {
+    const opening = !helpOpen;
+    setHelpOpen(opening);
+    // On narrow screens the panel sits below the sidebar, so bring it into view.
+    if (opening) requestAnimationFrame(() => document.getElementById("help")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
 
   const resetZoom = () => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -337,7 +369,12 @@ function App() {
     if (chart) {
       chart.zoomScale('x', { min: nextStart, max: nextEnd }, 'none');
       handleChange(chart);
+      return;
     }
+    setVisibleMin(nextStart);
+    setVisibleMax(nextEnd);
+    setMinimum(nextStart);
+    setMaximum(nextEnd);
   };
 
   const zoomGraph = (factor: number) => {
@@ -384,35 +421,46 @@ function App() {
 
     // Sample to the chart's pixel width: zoomed-out views stay light, while zooming in reveals detail.
     const plotWidth = chartRef.current?.chartArea.width ?? Math.min(window.innerWidth * 0.65, 1000);
-    const bucketCount = Math.max(1, Math.floor(plotWidth / 2));
-    const bucketSize = Math.max(1, Math.ceil(inRange.length / bucketCount));
-    // Keep extrema, validity transitions, and events so spikes and event markers survive sampling.
-    const filteredData: DataPoint[] = [];
-    for (let start = 0; start < inRange.length; start += bucketSize) {
-      const end = Math.min(start + bucketSize, inRange.length);
-      const keep = new Set<number>([start, end - 1]);
-      for (const key of selectedVariables) {
-        let min = Infinity, max = -Infinity, minIndex = -1, maxIndex = -1;
-        for (let i = start; i < end; i++) {
-          const value = inRange[i][key];
-          const valid = typeof value === "number" && Number.isFinite(value);
-          if (i > 0) {
-            const previous = inRange[i - 1][key];
-            const previousValid = typeof previous === "number" && Number.isFinite(previous);
-            if (valid !== previousValid) { if (i > start) keep.add(i - 1); keep.add(i); }
+    const channels = [...selectedVariables];
+    // Each bucket keeps its ends, every channel's extrema and gap edges, and any events, so
+    // spikes, gaps and event markers survive sampling. Rows are shared by all datasets.
+    const sample = (bucketCount: number) => {
+      const bucketSize = Math.max(1, Math.ceil(inRange.length / bucketCount));
+      const rows: DataPoint[] = [];
+      for (let start = 0; start < inRange.length; start += bucketSize) {
+        const end = Math.min(start + bucketSize, inRange.length);
+        const keep = new Set<number>([start, end - 1]);
+        for (const key of channels) {
+          let min = Infinity, max = -Infinity, minIndex = -1, maxIndex = -1, firstGap = -1, lastGap = -1;
+          for (let i = start; i < end; i++) {
+            const value = inRange[i][key];
+            if (typeof value !== "number" || !Number.isFinite(value)) {
+              if (firstGap < 0) firstGap = i;
+              lastGap = i;
+              continue;
+            }
+            if (value < min) { min = value; minIndex = i; }
+            if (value > max) { max = value; maxIndex = i; }
           }
-          if (!valid) continue;
-          if (value < min) { min = value; minIndex = i; }
-          if (value > max) { max = value; maxIndex = i; }
+          if (minIndex >= 0) keep.add(minIndex);
+          if (maxIndex >= 0) keep.add(maxIndex);
+          if (firstGap >= 0) { keep.add(firstGap); keep.add(lastGap); }
         }
-        if (minIndex >= 0) keep.add(minIndex);
-        if (maxIndex >= 0) keep.add(maxIndex);
+        for (let i = start; i < end; i++) if (inRange[i].messages) keep.add(i);
+        [...keep].sort((a, b) => a - b).forEach(index => rows.push(inRange[index]));
       }
-      for (let i = start; i < end; i++) if (inRange[i].messages) keep.add(i);
-      [...keep].sort((a, b) => a - b).forEach(index => filteredData.push(inRange[index]));
-    }
+      return rows;
+    };
 
-    return filteredData;
+    let bucketCount = Math.max(1, Math.floor(plotWidth / 2));
+    let rows = sample(bucketCount);
+    // Many channels with extrema at different times multiply the shared rows; coarsen until
+    // the total point count fits the budget.
+    while (rows.length * channels.length > POINT_BUDGET && bucketCount > 1) {
+      bucketCount = Math.max(1, Math.floor(bucketCount * POINT_BUDGET / (rows.length * channels.length) * 0.9));
+      rows = sample(bucketCount);
+    }
+    return rows;
   }, [data, dependentVariable, minimum, maximum, selectedVariables]);
 
   const renderGraph = () => {
@@ -432,34 +480,16 @@ function App() {
 
     const initialTimestamp = (data[0][dependentVariable] as number);
 
-      if (filteredData.length === 0) {
-        return (
-          <Line
-            data={{
-              labels: [visibleMin, visibleMax],
-              datasets: [
-                {
-                  label: "No data in this range",
-                  data: [null, null],
-                  borderColor: "rgba(200, 200, 200, 0.3)",
-                  borderWidth: 2,
-                  pointRadius: 0,
-                  fill: false,
-                },
-              ],
-            }}
-          
-          />
-        );
-      }
-
     const labels = filteredData.map((point) => (point[dependentVariable] as number) - initialTimestamp);
     const messages = filteredData.map((point) => (point["messages"] ? point["messages"] : null));
 
-    const allChannels = Object.keys(filteredData[0]).filter((key) => key !== dependentVariable && key !== "messages");
+    const allChannels = Object.keys(data[0]).filter((key) => key !== dependentVariable && key !== "messages");
 
-    const datasets = Object.keys(filteredData[0])
-      .filter((key) => key !== dependentVariable && key !== "messages" && selectedVariables.has(key))
+    // An empty range still renders the same chart (and ref) so the slider and zoom keep working.
+    const datasets = filteredData.length === 0
+      ? [{ label: "No data in this range", data: [] as TelemetryChartPoint[], borderColor: theme.grid, backgroundColor: theme.grid, pointRadius: 0 }]
+      : allChannels
+      .filter((key) => selectedVariables.has(key))
       .map((key) => {
         const color = channelColor(allChannels.indexOf(key), isDark);
         return {
@@ -563,11 +593,8 @@ function App() {
           max: visibleMax,
           grid: { color: theme.grid },
           border: { color: theme.grid },
-          ticks: {
-            color: theme.text,
-            callback: (value: string | number) =>
-              typeof value === "number" ? Number(value.toFixed(2)) : value,
-          },
+          // Chart.js's default numeric formatter scales precision to the tick spacing.
+          ticks: { color: theme.text },
         },
         y: {
           title: {
@@ -601,7 +628,7 @@ function App() {
               <Checkbox
                 id={variable}
                 checked={selectedVariables.has(variable)}
-                style={{ borderColor: channelColor(index, isDark), color: '#fff', backgroundColor: selectedVariables.has(variable) ? channelColor(index, isDark) : 'transparent' }}
+                style={{ borderColor: channelColor(index, isDark), color: channelForeground(index, isDark), backgroundColor: selectedVariables.has(variable) ? channelColor(index, isDark) : 'transparent' }}
                 onCheckedChange={() => toggleVariable(variable)}
               />
               <span className="truncate">{variable}</span>
@@ -614,13 +641,14 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar data={csvFiles} loading={samplesLoading} busy={loading || importBusy} onSelect={(url) => { setSampleRevision(value => value + 1); void handleFileUpload(url); }} />
+      <Navbar data={csvFiles} loading={samplesLoading} busy={loading || importBusy} helpOpen={helpOpen} onToggleHelp={toggleHelp} onSelect={(url) => { setSampleRevision(value => value + 1); void handleFileUpload(url); }} />
       <div className="flex min-h-[calc(100vh-3.5rem)] flex-col md:flex-row">
         <aside aria-label="Telemetry controls" className="w-full shrink-0 border-b p-4 md:w-80 md:border-b-0 md:border-r md:p-5">
           <TelemetryImport onPlot={handleFileUpload} sampleRevision={sampleRevision} loading={loading} onBusyChange={setImportBusy} />
           {data && data.length > 0 && <div className="mt-6 border-t pt-5">{renderVariableCheckboxes()}</div>}
         </aside>
         <main className="min-w-0 flex-1 p-4 sm:p-6">
+          {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
           {data && <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <span className="min-w-0 break-all text-sm font-medium">{loadedName}</span>
             <TelemetryExport key={dataRevision} data={data} timeKey={dependentVariable} selectedChannels={selectedVariables}

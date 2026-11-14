@@ -1,11 +1,12 @@
 import { Fragment } from 'react';
+import { CircleHelp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface CSVFile { folder: string; name: string; url: string; }
-interface Props { data?: CSVFile[]; loading?: boolean; busy?: boolean; onSelect?: (url: string) => void; }
+interface Props { data?: CSVFile[]; loading?: boolean; busy?: boolean; onSelect?: (url: string) => void; helpOpen?: boolean; onToggleHelp?: () => void; }
 
-export default function Navbar({ data = [], loading = false, busy = false, onSelect }: Props) {
+export default function Navbar({ data = [], loading = false, busy = false, onSelect, helpOpen = false, onToggleHelp }: Props) {
   const folders = data.reduce<Record<string, CSVFile[]>>((groups, file) => {
     (groups[file.folder] ??= []).push(file);
     return groups;
@@ -17,6 +18,8 @@ export default function Navbar({ data = [], loading = false, busy = false, onSel
         <img src={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}ARA.jpeg`} alt="" className="size-8 shrink-0 rounded-sm object-contain" />
         <span className="truncate text-sm font-semibold">ARA CSV converter</span>
       </div>
+      <div className="flex items-center gap-2">
+      <Button variant="ghost" size="sm" aria-expanded={helpOpen} aria-controls="help" onClick={onToggleHelp}><CircleHelp /><span className="sr-only sm:not-sr-only">Help</span></Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" disabled={busy}>Sample files</Button>
@@ -33,6 +36,7 @@ export default function Navbar({ data = [], loading = false, busy = false, onSel
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      </div>
     </header>
   );
 }
