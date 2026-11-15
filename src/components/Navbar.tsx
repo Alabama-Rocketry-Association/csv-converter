@@ -15,8 +15,7 @@ export default function Navbar({ data = [], loading = false, busy = false, onSel
   return (
     <header className="flex h-14 items-center justify-between gap-4 border-b bg-background px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-2.5">
-        <img src={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}ARA.jpeg`} alt="" className="size-8 shrink-0 rounded-sm object-contain" />
-        <span className="truncate text-sm font-semibold">ARA CSV converter</span>
+        <img src={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}ARA Logo Vector.svg`} alt="" className="size-36 shrink-0 rounded-sm object-contain" />
       </div>
       <div className="flex items-center gap-2">
       <Button variant="ghost" size="sm" aria-expanded={helpOpen} aria-controls="help" onClick={onToggleHelp}><CircleHelp /><span className="sr-only sm:not-sr-only">Help</span></Button>
